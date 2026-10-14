@@ -17,11 +17,11 @@ enum Role {
 }
 
 enum TicketStatus {
-  WAITING
-  IN_PROGRESS
-  TRANSFERRED
-  RESOLVED
-  CLOSED
+  WAITING       // na fila (setor ou atendente específico)
+  IN_PROGRESS   // sendo atendido
+  TRANSFERRED   // transferido pra outro setor/atendente
+  RESOLVED      // resolvido
+  CLOSED        // fechado
 }
 
 enum TicketPriority {
@@ -31,21 +31,70 @@ enum TicketPriority {
   URGENT
 }
 
+enum TicketChannel {
+  WHATSAPP
+  WEB
+}
+
+// Estados do robô durante a conversa
+enum BotState {
+  WAITING_SECTOR       // robô mostrou setores, aguardando escolha
+  WAITING_AGENT        // robô mostrou atendentes, aguardando escolha
+  WAITING_ATTENDANCE   // ticket criado, aguardando alguém assumir
+  IN_ATTENDANCE        // atendente assumiu, conversa em andamento
+  CLOSED               // atendimento encerrado
+}
+
+// ==========================
+// SETORES
+// ==========================
+model Sector {
+  id          String   @id @default(cuid())
+  name        String              // "Comercial", "Certificados", "Suporte"
+  slug        String   @unique    // "comercial", "certificados", "suporte"
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users          User[]         @relation("SectorUsers")
+  tickets        Ticket[]       @relation("SectorTickets")
+  conversations  Conversation[]
+  transfersTo    Transfer[]     @relation("TransfersToSector")
+
+  @@map("sectors")
+}
+
 // ==========================
 // USUÁRIOS
 // ==========================
 model User {
   id        String   @id @default(cuid())
   name      String
-  email     String   @unique
-  password  String
   role      Role     @default(CLIENT)
   active    Boolean  @default(true)
+
+  // Login (obrigatório pra ADMIN/AGENT, null pra CLIENT)
+  email     String?  @unique
+  password  String?
+
+  // WhatsApp (obrigatório pra CLIENT, null pra ADMIN/AGENT)
+  phone     String?  @unique
+
+  // Setor (obrigatório pra AGENT, null pra ADMIN/CLIENT)
+  sectorId  String?
+  sector    Sector?  @relation("SectorUsers", fields: [sectorId], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  clientTickets  Ticket[]   @relation("ClientTickets")
-  agentTickets   Ticket[]   @relation("AgentTickets")
+  // Tickets onde é cliente
+  clientTickets     Ticket[] @relation("ClientTickets")
+  // Tickets onde é atendente responsável
+  agentTickets      Ticket[] @relation("AgentTickets")
+  // Tickets onde cliente pediu ele especificamente
+  requestedTickets  Ticket[] @relation("RequestedAgentTickets")
+
   messages       Message[]
   transfersSent  Transfer[] @relation("TransfersFrom")
   transfersRecv  Transfer[] @relation("TransfersTo")
@@ -61,11 +110,21 @@ model Ticket {
   subject   String
   status    TicketStatus   @default(WAITING)
   priority  TicketPriority @default(MEDIUM)
-  queue     String         @default("geral")
+  channel   TicketChannel  @default(WHATSAPP)
 
+  // Setor sempre existe
+  sectorId  String
+  sector    Sector         @relation("SectorTickets", fields: [sectorId], references: [id])
+
+  // Cliente
   clientId  String
   client    User           @relation("ClientTickets", fields: [clientId], references: [id])
 
+  // Atendente pedido pelo cliente (opcional)
+  requestedAgentId String?
+  requestedAgent   User?   @relation("RequestedAgentTickets", fields: [requestedAgentId], references: [id])
+
+  // Atendente que assumiu (opcional)
   agentId   String?
   agent     User?          @relation("AgentTickets", fields: [agentId], references: [id])
 
@@ -73,8 +132,9 @@ model Ticket {
   updatedAt DateTime       @updatedAt
   closedAt  DateTime?
 
-  messages  Message[]
-  transfers Transfer[]
+  messages       Message[]
+  transfers      Transfer[]
+  conversation   Conversation?
 
   @@map("tickets")
 }
@@ -83,19 +143,46 @@ model Ticket {
 // MENSAGENS
 // ==========================
 model Message {
-  id        String   @id @default(cuid())
-  content   String
-  read      Boolean  @default(false)
+  id         String        @id @default(cuid())
+  content    String
+  channel    TicketChannel @default(WHATSAPP)
+  externalId String?                          // id da mensagem no WhatsApp
+  read       Boolean       @default(false)
 
-  ticketId  String
-  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketId   String
+  ticket     Ticket        @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
-  senderId  String
-  sender    User     @relation(fields: [senderId], references: [id])
+  senderId   String
+  sender     User          @relation(fields: [senderId], references: [id])
 
-  createdAt DateTime @default(now())
+  createdAt  DateTime      @default(now())
 
   @@map("messages")
+}
+
+// ==========================
+// CONVERSAS (estado do robô)
+// ==========================
+model Conversation {
+  id        String    @id @default(cuid())
+  phone     String    @unique               // número do cliente
+  state     BotState  @default(WAITING_SECTOR)
+
+  // Setor escolhido (usado nos estados WAITING_AGENT / WAITING_ATTENDANCE / IN_ATTENDANCE)
+  sectorId  String?
+  sector    Sector?   @relation(fields: [sectorId], references: [id])
+
+  // Ticket atual (preenchido quando vira WAITING_ATTENDANCE ou IN_ATTENDANCE)
+  ticketId  String?   @unique
+  ticket    Ticket?   @relation(fields: [ticketId], references: [id])
+
+  // JSON com estado extra (ex: escolha pendente, contador de tentativas)
+  context   String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("conversations")
 }
 
 // ==========================
@@ -108,11 +195,17 @@ model Transfer {
   ticketId   String
   ticket     Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
+  // Quem transferiu
   fromUserId String
   fromUser   User     @relation("TransfersFrom", fields: [fromUserId], references: [id])
 
-  toUserId   String
-  toUser     User     @relation("TransfersTo", fields: [toUserId], references: [id])
+  // Pra quem transferiu (atendente específico)
+  toUserId   String?
+  toUser     User?    @relation("TransfersTo", fields: [toUserId], references: [id])
+
+  // Ou pra um setor inteiro
+  toSectorId String?
+  toSector   Sector?  @relation("TransfersToSector", fields: [toSectorId], references: [id])
 
   createdAt  DateTime @default(now())
 

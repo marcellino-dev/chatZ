@@ -1,7 +1,8 @@
-// Roles disponíveis no sistema
+// ==========================
+// AUTH
+// ==========================
 export type Role = 'ADMIN' | 'AGENT' | 'CLIENT';
 
-// Usuário autenticado (sem senha)
 export interface User {
   id: string;
   name: string;
@@ -11,21 +12,54 @@ export interface User {
   createdAt: string;
 }
 
-// Resposta do login / register
 export interface AuthResponse {
   token: string;
   user: User;
 }
 
-// Payload do login
 export interface LoginPayload {
   email: string;
   password: string;
 }
 
-// Payload do register
 export interface RegisterPayload {
   name: string;
   email: string;
   password: string;
+}
+
+// ==========================
+// TICKETS
+// ==========================
+export type TicketStatus =
+  | 'WAITING'
+  | 'IN_PROGRESS'
+  | 'TRANSFERRED'
+  | 'RESOLVED'
+  | 'CLOSED';
+
+export type TicketPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+
+export interface Ticket {
+  id: string;
+  subject: string;
+  status: TicketStatus;
+  priority: TicketPriority;
+  queue: string;
+  clientId: string;
+  agentId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+
+  client: Pick<User, 'id' | 'name' | 'email' | 'role'>;
+  agent: Pick<User, 'id' | 'name' | 'email' | 'role'> | null;
+
+  _count?: { messages: number };
+}
+
+export interface CreateTicketPayload {
+  subject: string;
+  priority?: TicketPriority;
+  queue?: string;
 }

@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/auth';
 
 export function Dashboard() {
@@ -23,7 +23,9 @@ export function Dashboard() {
       {/* Header */}
       <header className="border-b border-chatz-border bg-chatz-card">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <h1 className="text-xl font-bold text-chatz-primary">chatZ 🚀</h1>
+          <Link to="/dashboard" className="text-xl font-bold text-chatz-primary">
+            chatZ 🚀
+          </Link>
 
           <div className="flex items-center gap-4">
             <div className="text-right">
@@ -44,7 +46,7 @@ export function Dashboard() {
 
       {/* Main */}
       <main className="max-w-6xl mx-auto px-6 py-10">
-        <div className="bg-chatz-card border border-chatz-border rounded-2xl p-8">
+        <div className="bg-chatz-card border border-chatz-border rounded-2xl p-8 mb-6">
           <h2 className="text-2xl font-bold text-chatz-text mb-2">
             Olá, {user.name.split(' ')[0]}! 👋
           </h2>
@@ -52,19 +54,35 @@ export function Dashboard() {
             Você está logado como <strong className="text-chatz-text">{roleLabel}</strong>
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
             <InfoCard label="ID" value={user.id.slice(0, 12) + '...'} />
             <InfoCard label="Email" value={user.email} />
             <InfoCard label="Role" value={user.role} />
           </div>
         </div>
 
-        <div className="mt-8 bg-chatz-card/50 border border-chatz-border
-                        border-dashed rounded-2xl p-8 text-center">
-          <p className="text-chatz-muted">
-            🚧 Próximas features: filas, tickets, transferências e chat em tempo real
-          </p>
-        </div>
+        {/* Ação principal */}
+        <Link
+          to="/tickets"
+          className="block bg-chatz-card border border-chatz-border rounded-2xl p-8
+                     hover:border-chatz-primary transition-all group"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-xl font-semibold text-chatz-text mb-1 group-hover:text-chatz-primary transition-colors">
+                🎫 Atendimentos
+              </h3>
+              <p className="text-chatz-muted text-sm">
+                {user.role === 'CLIENT' && 'Abra e acompanhe seus chamados'}
+                {user.role === 'AGENT' && 'Veja a fila e atenda chamados'}
+                {user.role === 'ADMIN' && 'Visão geral de todos os tickets'}
+              </p>
+            </div>
+            <span className="text-chatz-primary text-3xl group-hover:translate-x-1 transition-transform">
+              →
+            </span>
+          </div>
+        </Link>
       </main>
     </div>
   );
