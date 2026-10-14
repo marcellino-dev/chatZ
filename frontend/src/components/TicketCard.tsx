@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { StatusBadge } from './StatusBadge';
 import { PriorityBadge } from './PriorityBadge';
 import type { Ticket } from '../types';
@@ -10,7 +11,6 @@ interface Props {
 }
 
 export function TicketCard({ ticket, showActions, onAssign, onResolve }: Props) {
-  // Defesas contra dados incompletos
   const sectorName = ticket.sector?.name ?? 'Sem setor';
   const clientName = ticket.client?.name ?? 'Cliente';
   const agentName = ticket.agent?.name;
@@ -30,10 +30,14 @@ export function TicketCard({ ticket, showActions, onAssign, onResolve }: Props) 
   return (
     <div className="bg-chatz-card border border-chatz-border rounded-xl p-5
                     hover:border-chatz-primary/50 transition-all">
-      {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-3">
         <div className="flex-1 min-w-0">
-          <h3 className="text-chatz-text font-medium truncate">{ticket.subject}</h3>
+          <Link
+            to={`/tickets/${ticket.id}`}
+            className="text-chatz-text font-medium truncate block hover:text-chatz-primary transition-colors"
+          >
+            {ticket.subject}
+          </Link>
           <p className="text-chatz-muted text-xs mt-1">
             #{ticket.id.slice(0, 8)} · {date}
           </p>
@@ -41,7 +45,6 @@ export function TicketCard({ ticket, showActions, onAssign, onResolve }: Props) 
         <StatusBadge status={ticket.status} />
       </div>
 
-      {/* Badges */}
       <div className="flex flex-wrap items-center gap-3 mb-4 text-xs">
         <PriorityBadge priority={ticket.priority} />
         <span className="text-chatz-muted">🏢 {sectorName}</span>
@@ -52,7 +55,6 @@ export function TicketCard({ ticket, showActions, onAssign, onResolve }: Props) 
         )}
       </div>
 
-      {/* Ações */}
       {showActions && (canAssign || canResolve) && (
         <div className="flex gap-2 pt-3 border-t border-chatz-border">
           {canAssign && (
@@ -74,6 +76,27 @@ export function TicketCard({ ticket, showActions, onAssign, onResolve }: Props) 
               Resolver
             </button>
           )}
+          <Link
+            to={`/tickets/${ticket.id}`}
+            className="px-4 py-2 bg-chatz-bg hover:bg-chatz-card-hover
+                       border border-chatz-border text-chatz-text
+                       text-sm font-medium rounded-lg transition-all ml-auto"
+          >
+            Abrir →
+          </Link>
+        </div>
+      )}
+
+      {/* Se não tem ações, mostra só o botão Abrir */}
+      {(!showActions || (!canAssign && !canResolve)) && (
+        <div className="pt-3 border-t border-chatz-border">
+          <Link
+            to={`/tickets/${ticket.id}`}
+            className="text-chatz-primary hover:text-chatz-primary-hover
+                       text-sm font-medium"
+          >
+            Abrir conversa →
+          </Link>
         </div>
       )}
     </div>

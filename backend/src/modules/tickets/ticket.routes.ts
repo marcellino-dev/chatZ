@@ -1,28 +1,21 @@
 import { Router } from 'express';
 import * as ticketController from './ticket.controller';
 import { authMiddleware } from '../../middlewares/auth';
+import messageRoutes from '../messages/message.routes';
 
 const router = Router();
 
-// Todas as rotas exigem autenticação
 router.use(authMiddleware);
 
-// Criar ticket (só CLIENT — validado no service)
+// Tickets
 router.post('/', ticketController.create);
-
-// Listar (filtrado por role no service)
 router.get('/', ticketController.list);
-
-// Detalhes de um ticket
 router.get('/:id', ticketController.getById);
-
-// Assumir ticket (AGENT/ADMIN)
 router.patch('/:id/assign', ticketController.assign);
-
-// Atualizar status (AGENT dono ou ADMIN)
 router.patch('/:id/status', ticketController.updateStatus);
-
-// Atualizar prioridade (AGENT dono ou ADMIN)
 router.patch('/:id/priority', ticketController.updatePriority);
+
+// Mensagens aninhadas em /tickets/:ticketId/messages
+router.use('/:ticketId/messages', messageRoutes);
 
 export default router;

@@ -1,6 +1,6 @@
 import { prisma } from '../../config/prisma';
 import * as msg from './bot.messages';
-import { emitToSector, emitToUser } from '../../sockets/socket.server';
+import { emitToSector, emitToUser, emitToTicket } from '../../sockets/socket.server';
 
 interface BotInput {
   phone: string;
@@ -33,7 +33,6 @@ export async function processMessage(input: BotInput): Promise<BotReply> {
       },
     });
 
-    // Garante que o User cliente existe
     await ensureClientUser(phone);
 
     return {
@@ -50,7 +49,6 @@ export async function processMessage(input: BotInput): Promise<BotReply> {
       return handleAgentChoice(conversation, message);
 
     case 'WAITING_ATTENDANCE':
-      // Cliente mandou msg enquanto aguardava atendente
       return {
         reply: msg.messages.alreadyInAttendance,
       };
@@ -86,7 +84,6 @@ async function handleSectorChoice(
     };
   }
 
-  // Busca atendentes ativos do setor
   const agents = await prisma.user.findMany({
     where: {
       role: 'AGENT',
@@ -96,7 +93,6 @@ async function handleSectorChoice(
     orderBy: { name: 'asc' },
   });
 
-  // Atualiza Conversation
   await prisma.conversation.update({
     where: { id: conversation.id },
     data: {
@@ -125,13 +121,11 @@ async function handleAgentChoice(
     });
 
     return {
-      reply:
-        msg.messages.backToMenu + '\n\n' + (await buildSectorMenu()),
+      reply: msg.messages.backToMenu + '\n\n' + (await buildSectorMenu()),
     };
   }
 
   if (!conversation.sectorId) {
-    // Estado inconsistente — reseta
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: { state: 'WAITING_SECTOR' },
@@ -186,31 +180,22 @@ async function handleAgentChoice(
   })}`;
 
   const ticket = await prisma.ticket.create({
-  data: {
-    subject,
-    sectorId: sector.id,
-    clientId: client.id,
-    requestedAgentId: chosenAgent?.id ?? null,
-    status: 'WAITING',
-    priority: 'MEDIUM',
-    channel: 'WHATSAPP',
-  },
-  include: {
-    sector: { select: { id: true, name: true, slug: true } },
-    client: { select: { id: true, name: true, phone: true, role: true } },
-    requestedAgent: { select: { id: true, name: true, email: true, role: true } },
-  },
-});
+    data: {
+      subject,
+      sectorId: sector.id,
+      clientId: client.id,
+      requestedAgentId: chosenAgent?.id ?? null,
+      status: 'WAITING',
+      priority: 'MEDIUM',
+      channel: 'WHATSAPP',
+    },
+    include: {
+      sector: { select: { id: true, name: true, slug: true } },
+      client: { select: { id: true, name: true, phone: true, role: true } },
+      requestedAgent: { select: { id: true, name: true, email: true, role: true } },
+    },
+  });
 
-// 🔔 Notifica o setor
-emitToSector(ticket.sectorId, 'ticket:new', ticket);
-
-// 🔔 Notifica o atendente específico (se pedido)
-if (ticket.requestedAgentId) {
-  emitToUser(ticket.requestedAgentId, 'ticket:new', ticket);
-}
-
-  // Atualiza Conversation
   await prisma.conversation.update({
     where: { id: conversation.id },
     data: {
@@ -218,6 +203,14 @@ if (ticket.requestedAgentId) {
       ticketId: ticket.id,
     },
   });
+
+  // 🔔 Notifica o setor
+  emitToSector(ticket.sectorId, 'ticket:new', ticket);
+
+  // 🔔 Notifica o atendente específico (se pedido)
+  if (ticket.requestedAgentId) {
+    emitToUser(ticket.requestedAgentId, 'ticket:new', ticket);
+  }
 
   return {
     reply: msg.ticketCreated({
@@ -237,7 +230,6 @@ async function handleInAttendance(
   message: string
 ): Promise<BotReply> {
   if (!conversation.ticketId) {
-    // Estado inconsistente
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: { state: 'WAITING_SECTOR' },
@@ -245,14 +237,12 @@ async function handleInAttendance(
     return { reply: await buildSectorMenu() };
   }
 
-  // Busca o ticket + cliente
   const ticket = await prisma.ticket.findUnique({
     where: { id: conversation.ticketId },
     include: { client: true },
   });
 
   if (!ticket) {
-    // Ticket sumiu — reseta
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: { state: 'WAITING_SECTOR', ticketId: null, sectorId: null },
@@ -261,21 +251,26 @@ async function handleInAttendance(
   }
 
   // Salva mensagem no ticket
-  await prisma.message.create({
+  const newMessage = await prisma.message.create({
     data: {
       content: message,
       ticketId: ticket.id,
       senderId: ticket.clientId,
       channel: 'WHATSAPP',
     },
+    include: {
+      sender: {
+        select: { id: true, name: true, role: true },
+      },
+    },
   });
 
-  // Atendente já assumiu? Se sim, avisa que vai responder
-  // (futuro: enviar via Socket.IO pro atendente)
+  // 🔔 Emite pra sala do ticket (atendente vê em tempo real)
+  emitToTicket(ticket.id, 'message:new', newMessage);
+
+  // Atendente já assumiu? Se sim, não responde (atendente humano responde)
   if (ticket.agentId) {
-    return {
-      reply: '', // não responde (atendente humano vai responder)
-    };
+    return { reply: '' };
   }
 
   return {
@@ -287,7 +282,6 @@ async function handleInAttendance(
 // HELPERS
 // ==========================
 function normalizePhone(phone: string): string {
-  // Remove tudo que não for dígito
   return phone.replace(/\D/g, '');
 }
 

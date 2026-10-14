@@ -47,10 +47,7 @@ export async function createTicket(user: AuthUser, data: CreateTicketInput) {
     },
   });
 
-  // 🔔 Notifica setor
   emitToSector(ticket.sectorId, 'ticket:new', ticket);
-
-  // 🔔 Se cliente pediu atendente específico, notifica ele também
   if (ticket.requestedAgentId) {
     emitToUser(ticket.requestedAgentId, 'ticket:new', ticket);
   }
@@ -132,7 +129,10 @@ export async function assignTicket(user: AuthUser, id: string) {
 
   const updated = await prisma.ticket.update({
     where: { id },
-    data: { agentId: user.id, status: 'IN_PROGRESS' },
+    data: {
+      agentId: user.id,
+      status: 'IN_PROGRESS',
+    },
     include: {
       sector: { select: { id: true, name: true, slug: true } },
       client: { select: { id: true, name: true, phone: true, role: true } },
@@ -141,9 +141,14 @@ export async function assignTicket(user: AuthUser, id: string) {
     },
   });
 
-  // 🔔 Notifica setor (some da fila de todos)
+  // 🔥 CORREÇÃO: atualiza a Conversation pra IN_ATTENDANCE
+  // Assim o bot sabe que já pode salvar mensagens do cliente
+  await prisma.conversation.updateMany({
+    where: { ticketId: id },
+    data: { state: 'IN_ATTENDANCE' },
+  });
+
   emitToSector(ticket.sectorId, 'ticket:assigned', updated);
-  // 🔔 Notifica o próprio agente
   emitToUser(user.id, 'ticket:assigned', updated);
 
   return updated;
@@ -152,7 +157,11 @@ export async function assignTicket(user: AuthUser, id: string) {
 // ==========================
 // ATUALIZAR STATUS
 // ==========================
-export async function updateStatus(user: AuthUser, id: string, data: UpdateStatusInput) {
+export async function updateStatus(
+  user: AuthUser,
+  id: string,
+  data: UpdateStatusInput
+) {
   const ticket = await prisma.ticket.findUnique({ where: { id } });
   if (!ticket) throw new AppError('Ticket não encontrado', 404);
   if (!canModifyTicket(user, ticket))
@@ -175,7 +184,14 @@ export async function updateStatus(user: AuthUser, id: string, data: UpdateStatu
     },
   });
 
-  // 🔔 Notifica setor + ticket (quem tá vendo)
+  // 🔥 Se o ticket foi fechado/resolvido, fecha a Conversation também
+  if (data.status === 'CLOSED' || data.status === 'RESOLVED') {
+    await prisma.conversation.updateMany({
+      where: { ticketId: id },
+      data: { state: 'CLOSED' },
+    });
+  }
+
   emitToSector(ticket.sectorId, 'ticket:updated', updated);
   emitToTicket(id, 'ticket:updated', updated);
 
@@ -185,7 +201,11 @@ export async function updateStatus(user: AuthUser, id: string, data: UpdateStatu
 // ==========================
 // ATUALIZAR PRIORIDADE
 // ==========================
-export async function updatePriority(user: AuthUser, id: string, data: UpdatePriorityInput) {
+export async function updatePriority(
+  user: AuthUser,
+  id: string,
+  data: UpdatePriorityInput
+) {
   const ticket = await prisma.ticket.findUnique({ where: { id } });
   if (!ticket) throw new AppError('Ticket não encontrado', 404);
   if (!canModifyTicket(user, ticket))

@@ -11,7 +11,10 @@ export interface Sector {
   active: boolean;
   createdAt: string;
   updatedAt: string;
-  _count?: { users: number; tickets: number };
+  _count?: {
+    users: number;
+    tickets: number;
+  };
 }
 
 export interface User {
@@ -68,4 +71,22 @@ export interface Ticket {
   requestedAgent: Pick<User, 'id' | 'name' | 'email' | 'role'> | null;
 
   _count?: { messages: number };
+}
+
+// ==========================
+// MENSAGENS
+// ==========================
+export interface Message {
+  id: string;
+  content: string;
+  channel: 'WHATSAPP' | 'WEB';
+  read: boolean;
+  ticketId: string;
+  senderId: string;
+  createdAt: string;
+  sender: {
+    id: string;
+    name: string;
+    role: Role;
+  };
 }
