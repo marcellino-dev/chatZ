@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import authRoutes from './modules/auth/auth.routes';
 import ticketRoutes from './modules/tickets/ticket.routes';
+import sectorRoutes from './modules/sectors/sector.routes';
+import botRoutes from './modules/bot/bot.routes';
 import { errorHandler } from './middlewares/errorHandler';
 
 const app = express();
@@ -9,7 +11,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Health check
 app.get('/', (req, res) => {
   res.json({
     app: 'chatZ',
@@ -19,11 +20,11 @@ app.get('/', (req, res) => {
   });
 });
 
-// Rotas
 app.use('/auth', authRoutes);
 app.use('/tickets', ticketRoutes);
+app.use('/sectors', sectorRoutes);
+app.use('/bot', botRoutes);
 
-// Error handler (sempre por último!)
 app.use(errorHandler);
 
 export default app;

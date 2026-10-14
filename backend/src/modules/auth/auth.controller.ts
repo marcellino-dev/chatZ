@@ -1,21 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import * as authService from './auth.service';
-import { registerSchema, loginSchema } from './auth.schemas';
+import { loginSchema, createUserSchema } from './auth.schemas';
 
-export async function register(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
-  try {
-    const data = registerSchema.parse(req.body);
-    const result = await authService.register(data);
-    return res.status(201).json(result);
-  } catch (err) {
-    return next(err);
-  }
-}
-
+// ==========================
+// LOGIN
+// ==========================
 export async function login(
   req: Request,
   res: Response,
@@ -30,16 +19,34 @@ export async function login(
   }
 }
 
+// ==========================
+// ME
+// ==========================
 export async function me(
   req: Request,
   res: Response,
   next: NextFunction
 ) {
   try {
-    // ANTES: req.user!.sub
-    // AGORA: req.user!.id
     const user = await authService.me(req.user!.id);
     return res.json(user);
+  } catch (err) {
+    return next(err);
+  }
+}
+
+// ==========================
+// CRIAR USUÁRIO (só ADMIN)
+// ==========================
+export async function createUser(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const data = createUserSchema.parse(req.body);
+    const user = await authService.createUser(data);
+    return res.status(201).json(user);
   } catch (err) {
     return next(err);
   }
