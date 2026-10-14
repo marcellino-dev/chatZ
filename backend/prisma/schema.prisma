@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================
+// ENUMS
+// ==========================
+enum Role {
+  ADMIN
+  AGENT
+  CLIENT
+}
+
+enum TicketStatus {
+  WAITING      // na fila aguardando atendente
+  IN_PROGRESS  // sendo atendido
+  TRANSFERRED  // transferido
+  RESOLVED     // resolvido
+  CLOSED       // fechado
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// ==========================
+// USUÁRIOS
+// ==========================
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      Role     @default(CLIENT)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clientTickets  Ticket[]   @relation("ClientTickets")
+  agentTickets   Ticket[]   @relation("AgentTickets")
+  messages       Message[]
+  transfersSent  Transfer[] @relation("TransfersFrom")
+  transfersRecv  Transfer[] @relation("TransfersTo")
+
+  @@map("users")
+}
+
+// ==========================
+// TICKETS (chamados)
+// ==========================
+model Ticket {
+  id        String         @id @default(cuid())
+  subject   String
+  status    TicketStatus   @default(WAITING)
+  priority  TicketPriority @default(MEDIUM)
+  queue     String         @default("geral")
+
+  clientId  String
+  client    User           @relation("ClientTickets", fields: [clientId], references: [id])
+
+  agentId   String?
+  agent     User?          @relation("AgentTickets", fields: [agentId], references: [id])
+
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  closedAt  DateTime?
+
+  messages  Message[]
+  transfers Transfer[]
+
+  @@map("tickets")
+}
+
+// ==========================
+// MENSAGENS
+// ==========================
+model Message {
+  id        String   @id @default(cuid())
+  content   String
+  read      Boolean  @default(false)
+
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  senderId  String
+  sender    User     @relation(fields: [senderId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@map("messages")
+}
+
+// ==========================
+// TRANSFERÊNCIAS
+// ==========================
+model Transfer {
+  id         String   @id @default(cuid())
+  reason     String?
+
+  ticketId   String
+  ticket     Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  fromUserId String
+  fromUser   User     @relation("TransfersFrom", fields: [fromUserId], references: [id])
+
+  toUserId   String
+  toUser     User     @relation("TransfersTo", fields: [toUserId], references: [id])
+
+  createdAt  DateTime @default(now())
+
+  @@map("transfers")
+}

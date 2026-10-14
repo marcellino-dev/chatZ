@@ -1,0 +1,94 @@
+# ==========================
+# DEPENDÊNCIAS
+# ==========================
+node_modules/
+.pnp
+.pnp.js
+
+# ==========================
+# BUILD / DIST
+# ==========================
+dist/
+build/
+out/
+.next/
+.vite/
+
+# ==========================
+# VARIÁVEIS DE AMBIENTE
+# ==========================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*.local
+
+# ==========================
+# LOGS
+# ==========================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ==========================
+# PRISMA / BANCO DE DADOS
+# ==========================
+# Banco SQLite local (NÃO subir - é dado do dev)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Migrations SIM são versionadas (não ignora)
+!prisma/migrations/
+
+# ==========================
+# EDITORES / IDE
+# ==========================
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# ==========================
+# OS
+# ==========================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ==========================
+# CACHE / TEMP
+# ==========================
+.cache/
+.temp/
+.tmp/
+*.tsbuildinfo
+
+# ==========================
+# AI / SKILLS (Prisma 6+ gera isso)
+# ==========================
+.claude/
+.cursor/
+.agents/
+.devin/
+prisma.config.ts
+
+# ==========================
+# TESTES
+# ==========================
+coverage/
+.nyc_output/
+
+# ==========================
+# MISC
+# ==========================
+.eslintcache
