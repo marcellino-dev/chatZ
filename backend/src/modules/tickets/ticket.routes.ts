@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as ticketController from './ticket.controller';
 import { authMiddleware } from '../../middlewares/auth';
 import messageRoutes from '../messages/message.routes';
+import transferRoutes from '../transfers/transfer.routes';
 
 const router = Router();
 
@@ -15,7 +16,8 @@ router.patch('/:id/assign', ticketController.assign);
 router.patch('/:id/status', ticketController.updateStatus);
 router.patch('/:id/priority', ticketController.updatePriority);
 
-// Mensagens aninhadas em /tickets/:ticketId/messages
+// Aninhados
 router.use('/:ticketId/messages', messageRoutes);
+router.use('/:ticketId/transfers', transferRoutes);
 
 export default router;

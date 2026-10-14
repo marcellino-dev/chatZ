@@ -56,7 +56,7 @@ export async function createTicket(user: AuthUser, data: CreateTicketInput) {
 }
 
 // ==========================
-// LISTAR TICKETS
+// LISTAR TICKETS (corrigido)
 // ==========================
 export async function listTickets(user: AuthUser, query: ListTicketsQuery) {
   const where: any = {};
@@ -67,7 +67,9 @@ export async function listTickets(user: AuthUser, query: ListTicketsQuery) {
     if (query.mine) {
       where.agentId = user.id;
     } else {
-      if (user.sectorId) where.sectorId = user.sectorId;
+      if (user.sectorId) {
+        where.sectorId = user.sectorId;
+      }
       where.OR = [{ agentId: null }, { agentId: user.id }];
     }
   }
@@ -102,6 +104,14 @@ export async function getTicketById(user: AuthUser, id: string) {
       client: { select: { id: true, name: true, phone: true, role: true } },
       agent: { select: { id: true, name: true, email: true, role: true } },
       requestedAgent: { select: { id: true, name: true, email: true, role: true } },
+      transfers: {
+        orderBy: { createdAt: 'desc' },
+        include: {
+          fromUser: { select: { id: true, name: true, role: true } },
+          toUser: { select: { id: true, name: true, role: true } },
+          toSector: { select: { id: true, name: true, slug: true } },
+        },
+      },
     },
   });
 
@@ -141,8 +151,6 @@ export async function assignTicket(user: AuthUser, id: string) {
     },
   });
 
-  // 🔥 CORREÇÃO: atualiza a Conversation pra IN_ATTENDANCE
-  // Assim o bot sabe que já pode salvar mensagens do cliente
   await prisma.conversation.updateMany({
     where: { ticketId: id },
     data: { state: 'IN_ATTENDANCE' },
@@ -184,7 +192,6 @@ export async function updateStatus(
     },
   });
 
-  // 🔥 Se o ticket foi fechado/resolvido, fecha a Conversation também
   if (data.status === 'CLOSED' || data.status === 'RESOLVED') {
     await prisma.conversation.updateMany({
       where: { ticketId: id },

@@ -1,37 +1,46 @@
 import { useEffect, useState, useRef, FormEvent } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/auth';
 import { useMessagesStore } from '../stores/messages';
 import { api, getErrorMessage } from '../lib/api';
 import { getSocket } from '../lib/socket';
 import { StatusBadge } from '../components/StatusBadge';
 import { PriorityBadge } from '../components/PriorityBadge';
-import type { Ticket, Message } from '../types';
+import { TransferModal } from '../components/TransferModal';
+import type { Ticket, Message, Transfer } from '../types';
 
 export function TicketDetail() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const { messages, fetchMessages, sendMessage, addMessage, clear } =
     useMessagesStore();
 
   const [ticket, setTicket] = useState<Ticket | null>(null);
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Carrega ticket
-  useEffect(() => {
+  // Carrega ticket + transfers
+  function loadTicket() {
     if (!id) return;
     setLoading(true);
     api
       .get<Ticket>(`/tickets/${id}`)
-      .then(({ data }) => setTicket(data))
+      .then(({ data }) => {
+        setTicket(data);
+        setTransfers(data.transfers || []);
+      })
       .catch((err) => setError(getErrorMessage(err)))
       .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    loadTicket();
   }, [id]);
 
   // Carrega mensagens
@@ -41,7 +50,7 @@ export function TicketDetail() {
     return () => clear();
   }, [id, fetchMessages, clear]);
 
-  // Socket.IO: entra na sala do ticket + escuta mensagens
+  // Socket.IO
   useEffect(() => {
     if (!id) return;
     const socket = getSocket();
@@ -50,20 +59,26 @@ export function TicketDetail() {
     socket.emit('ticket:join', id);
 
     function handleNewMessage(msg: Message) {
-      if (msg.ticketId === id) {
-        addMessage(msg);
+      if (msg.ticketId === id) addMessage(msg);
+    }
+
+    function handleTicketUpdated(updated: Ticket) {
+      if (updated.id === id) {
+        setTicket((prev) => (prev ? { ...prev, ...updated } : updated));
       }
     }
 
     socket.on('message:new', handleNewMessage);
+    socket.on('ticket:updated', handleTicketUpdated);
 
     return () => {
       socket.emit('ticket:leave', id);
       socket.off('message:new', handleNewMessage);
+      socket.off('ticket:updated', handleTicketUpdated);
     };
   }, [id, addMessage]);
 
-  // Auto-scroll pro final
+  // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -103,17 +118,35 @@ export function TicketDetail() {
   }
 
   const canSend =
-    user?.role === 'ADMIN' || (user?.role === 'AGENT' && ticket.agentId === user.id);
+    user?.role === 'ADMIN' ||
+    (user?.role === 'AGENT' && ticket.agentId === user.id);
+
+  const canTransfer =
+    ticket.status !== 'RESOLVED' &&
+    ticket.status !== 'CLOSED' &&
+    (user?.role === 'ADMIN' || ticket.agentId === user?.id);
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
-      {/* Voltar */}
-      <Link
-        to="/tickets"
-        className="text-chatz-muted hover:text-chatz-text text-sm mb-4 inline-flex items-center gap-1"
-      >
-        ← Voltar
-      </Link>
+      <div className="flex items-center justify-between mb-4">
+        <Link
+          to="/tickets"
+          className="text-chatz-muted hover:text-chatz-text text-sm inline-flex items-center gap-1"
+        >
+          ← Voltar
+        </Link>
+
+        {canTransfer && (
+          <button
+            onClick={() => setTransferModalOpen(true)}
+            className="px-4 py-2 bg-chatz-warning/10 hover:bg-chatz-warning/20
+                       border border-chatz-warning/30 text-chatz-warning
+                       text-sm font-medium rounded-lg transition-all"
+          >
+            🔄 Transferir
+          </button>
+        )}
+      </div>
 
       {/* Header do ticket */}
       <div className="bg-chatz-card border border-chatz-border rounded-t-2xl p-5">
@@ -137,6 +170,29 @@ export function TicketDetail() {
             <span className="text-chatz-muted">🎧 {ticket.agent.name}</span>
           )}
         </div>
+
+        {/* Histórico de transferências */}
+        {transfers.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-chatz-border">
+            <p className="text-xs text-chatz-muted mb-2 font-medium">
+              🔄 Histórico de transferências
+            </p>
+            <div className="space-y-1">
+              {transfers.slice(0, 3).map((t) => (
+                <div key={t.id} className="text-xs text-chatz-muted">
+                  <span className="text-chatz-text">{t.fromUser.name}</span>
+                  {' → '}
+                  <span className="text-chatz-primary">
+                    {t.toUser ? t.toUser.name : t.toSector?.name}
+                  </span>
+                  {t.reason && (
+                    <span className="italic"> — "{t.reason}"</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Mensagens */}
@@ -146,7 +202,6 @@ export function TicketDetail() {
             Nenhuma mensagem ainda. Comece a conversa.
           </div>
         )}
-
         <div className="space-y-3">
           {messages.map((msg) => (
             <MessageBubble key={msg.id} message={msg} currentUserId={user?.id} />
@@ -188,13 +243,21 @@ export function TicketDetail() {
           </p>
         )}
       </div>
+
+      {/* Modal de transferência */}
+      <TransferModal
+        isOpen={transferModalOpen}
+        ticketId={ticket.id}
+        currentSectorId={ticket.sectorId}
+        onClose={() => setTransferModalOpen(false)}
+        onSuccess={() => {
+          loadTicket();
+        }}
+      />
     </div>
   );
 }
 
-// ==========================
-// BOLHA DE MENSAGEM
-// ==========================
 function MessageBubble({
   message,
   currentUserId,

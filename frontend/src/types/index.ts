@@ -70,6 +70,8 @@ export interface Ticket {
   agent: Pick<User, 'id' | 'name' | 'email' | 'role'> | null;
   requestedAgent: Pick<User, 'id' | 'name' | 'email' | 'role'> | null;
 
+  transfers?: Transfer[];
+
   _count?: { messages: number };
 }
 
@@ -89,4 +91,33 @@ export interface Message {
     name: string;
     role: Role;
   };
+}
+
+// ==========================
+// TRANSFERÊNCIAS
+// ==========================
+export interface Transfer {
+  id: string;
+  reason: string | null;
+  ticketId: string;
+  fromUserId: string;
+  toUserId: string | null;
+  toSectorId: string | null;
+  createdAt: string;
+
+  fromUser: {
+    id: string;
+    name: string;
+    role: Role;
+  };
+  toUser: {
+    id: string;
+    name: string;
+    role: Role;
+  } | null;
+  toSector: {
+    id: string;
+    name: string;
+    slug: string;
+  } | null;
 }
