@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import authRoutes from './modules/auth/auth.routes';
+import ticketRoutes from './modules/tickets/ticket.routes';
 import { errorHandler } from './middlewares/errorHandler';
 
 const app = express();
@@ -20,6 +21,7 @@ app.get('/', (req, res) => {
 
 // Rotas
 app.use('/auth', authRoutes);
+app.use('/tickets', ticketRoutes);
 
 // Error handler (sempre por último!)
 app.use(errorHandler);

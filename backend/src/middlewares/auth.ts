@@ -1,10 +1,15 @@
 import { Request, Response, NextFunction } from 'express';
-import { verifyToken, JwtPayload } from '../utils/jwt';
+import { verifyToken } from '../utils/jwt';
+
+export interface AuthUser {
+  id: string;
+  role: string;
+}
 
 declare global {
   namespace Express {
     interface Request {
-      user?: JwtPayload;
+      user?: AuthUser;
     }
   }
 }
@@ -28,14 +33,17 @@ export function authMiddleware(
 
   try {
     const payload = verifyToken(token);
-    req.user = payload;
+    // Traduz "sub" -> "id" pra ficar mais semântico
+    req.user = {
+      id: payload.sub,
+      role: payload.role,
+    };
     return next();
   } catch {
     return res.status(401).json({ error: 'Token inválido ou expirado' });
   }
 }
 
-// Middleware pra checar role específica
 export function requireRole(...roles: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.user) {

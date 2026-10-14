@@ -36,7 +36,9 @@ export async function me(
   next: NextFunction
 ) {
   try {
-    const user = await authService.me(req.user!.sub);
+    // ANTES: req.user!.sub
+    // AGORA: req.user!.id
+    const user = await authService.me(req.user!.id);
     return res.json(user);
   } catch (err) {
     return next(err);

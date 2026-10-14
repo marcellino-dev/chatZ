@@ -17,11 +17,11 @@ enum Role {
 }
 
 enum TicketStatus {
-  WAITING      // na fila aguardando atendente
-  IN_PROGRESS  // sendo atendido
-  TRANSFERRED  // transferido
-  RESOLVED     // resolvido
-  CLOSED       // fechado
+  WAITING
+  IN_PROGRESS
+  TRANSFERRED
+  RESOLVED
+  CLOSED
 }
 
 enum TicketPriority {
@@ -54,7 +54,7 @@ model User {
 }
 
 // ==========================
-// TICKETS (chamados)
+// TICKETS
 // ==========================
 model Ticket {
   id        String         @id @default(cuid())

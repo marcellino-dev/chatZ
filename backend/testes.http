@@ -1,0 +1,35 @@
+# ==========================
+# chatZ - Testes de API
+# ==========================
+
+# Login Carlos (cliente)
+$login = Invoke-RestMethod -Uri "http://localhost:3000/auth/login" `
+  -Method Post -ContentType "application/json" `
+  -Body '{"email":"carlos@chatz.com","password":"123456"}'
+$tokenCliente = $login.token
+
+# Login Ana (atendente)
+$loginAgent = Invoke-RestMethod -Uri "http://localhost:3000/auth/login" `
+  -Method Post -ContentType "application/json" `
+  -Body '{"email":"ana@chatz.com","password":"123456"}'
+$tokenAgent = $loginAgent.token
+
+# Criar ticket
+$ticket = Invoke-RestMethod -Uri "http://localhost:3000/tickets" `
+  -Method Post `
+  -Headers @{ Authorization = "Bearer $tokenCliente" } `
+  -ContentType "application/json" `
+  -Body '{"subject":"Teste automatico","priority":"HIGH","queue":"suporte"}'
+$ticketId = $ticket.id
+
+# Assumir
+Invoke-RestMethod -Uri "http://localhost:3000/tickets/$ticketId/assign" `
+  -Method Patch `
+  -Headers @{ Authorization = "Bearer $tokenAgent" } | Format-List
+
+# Resolver
+Invoke-RestMethod -Uri "http://localhost:3000/tickets/$ticketId/status" `
+  -Method Patch `
+  -Headers @{ Authorization = "Bearer $tokenAgent" } `
+  -ContentType "application/json" `
+  -Body '{"status":"RESOLVED"}' | Format-List
