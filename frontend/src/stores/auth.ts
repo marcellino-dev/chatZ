@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api } from '../lib/api';
+import { connectSocket, disconnectSocket } from '../lib/socket';
 import type { User, AuthResponse, LoginPayload } from '../types';
 
 interface AuthState {
@@ -11,11 +12,12 @@ interface AuthState {
   login: (payload: LoginPayload) => Promise<void>;
   logout: () => void;
   setUser: (user: User) => void;
+  hydrateSocket: () => void;
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
       token: null,
       isAuthenticated: false,
@@ -23,7 +25,6 @@ export const useAuthStore = create<AuthState>()(
       login: async (payload) => {
         const { data } = await api.post<AuthResponse>('/auth/login', payload);
 
-        // Salva token pro interceptor do axios usar
         localStorage.setItem('chatz_token', data.token);
 
         set({
@@ -31,9 +32,13 @@ export const useAuthStore = create<AuthState>()(
           token: data.token,
           isAuthenticated: true,
         });
+
+        // 🔌 Conecta socket
+        connectSocket(data.token);
       },
 
       logout: () => {
+        disconnectSocket();
         localStorage.removeItem('chatz_token');
         localStorage.removeItem('chatz_user');
         set({
@@ -44,9 +49,17 @@ export const useAuthStore = create<AuthState>()(
       },
 
       setUser: (user) => set({ user }),
+
+      // Reconecta socket ao abrir o app (se já logado)
+      hydrateSocket: () => {
+        const { token, isAuthenticated } = get();
+        if (isAuthenticated && token) {
+          connectSocket(token);
+        }
+      },
     }),
     {
-      name: 'chatz_user', // chave no localStorage
+      name: 'chatz_user',
       partialize: (state) => ({
         user: state.user,
         token: state.token,

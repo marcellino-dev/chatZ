@@ -1,13 +1,20 @@
+import http from 'http';
 import app from './app';
+import { initSocketServer } from './sockets/socket.server';
+import { env } from './config/env';
 
-const PORT = process.env.PORT || 3000;
+const server = http.createServer(app);
 
-app.listen(PORT, () => {
+// Inicializa Socket.IO
+initSocketServer(server);
+
+server.listen(env.PORT, () => {
   console.log(`
   ╔══════════════════════════════╗
   ║        🚀  chatZ  🚀         ║
   ╠══════════════════════════════╣
-  ║  Servidor: http://localhost:${PORT}  ║
+  ║  Servidor: http://localhost:${env.PORT}  ║
+  ║  Socket.IO: ativo 🔌         ║
   ╚══════════════════════════════╝
   `);
 });

@@ -3,7 +3,8 @@ import { useTicketsStore } from '../stores/tickets';
 import { useAuthStore } from '../stores/auth';
 import { useSectorsStore } from '../stores/sectors';
 import { TicketCard } from '../components/TicketCard';
-import type { TicketStatus } from '../types';
+import { getSocket } from '../lib/socket';
+import type { Ticket, TicketStatus } from '../types';
 
 type Tab = 'queue' | 'mine' | 'all';
 
@@ -23,11 +24,9 @@ export function Tickets() {
   const [statusFilter, setStatusFilter] = useState<TicketStatus | ''>('');
   const [sectorFilter, setSectorFilter] = useState<string>('');
 
-  // Carrega setores (pra filtro)
+  // Carrega setores (ADMIN)
   useEffect(() => {
-    if (user?.role === 'ADMIN') {
-      fetchSectors();
-    }
+    if (user?.role === 'ADMIN') fetchSectors();
   }, [user, fetchSectors]);
 
   // Carrega tickets
@@ -35,21 +34,66 @@ export function Tickets() {
     if (!user) return;
 
     const params: any = {};
-
-    if (user.role === 'AGENT') {
-      if (tab === 'mine') params.mine = true;
-    }
-
+    if (user.role === 'AGENT' && tab === 'mine') params.mine = true;
     if (statusFilter) params.status = statusFilter;
     if (sectorFilter) params.sectorId = sectorFilter;
 
     fetchTickets(params);
   }, [user, tab, statusFilter, sectorFilter, fetchTickets]);
 
+  // 🔌 Escuta eventos do Socket.IO
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    // Novo ticket criado
+    function handleNewTicket(ticket: Ticket) {
+      console.log('🔔 Novo ticket:', ticket);
+      // Recarrega a lista
+      const params: any = {};
+      if (user?.role === 'AGENT' && tab === 'mine') params.mine = true;
+      if (statusFilter) params.status = statusFilter;
+      if (sectorFilter) params.sectorId = sectorFilter;
+      fetchTickets(params);
+
+      // 🔔 Toca som "ding"
+      playDing();
+    }
+
+    // Ticket assumido
+    function handleAssigned(ticket: Ticket) {
+      console.log('🔔 Ticket assumido:', ticket.id);
+      const params: any = {};
+      if (user?.role === 'AGENT' && tab === 'mine') params.mine = true;
+      if (statusFilter) params.status = statusFilter;
+      if (sectorFilter) params.sectorId = sectorFilter;
+      fetchTickets(params);
+    }
+
+    // Ticket atualizado (status/prioridade)
+    function handleUpdated(ticket: Ticket) {
+      console.log('🔔 Ticket atualizado:', ticket.id);
+      const params: any = {};
+      if (user?.role === 'AGENT' && tab === 'mine') params.mine = true;
+      if (statusFilter) params.status = statusFilter;
+      if (sectorFilter) params.sectorId = sectorFilter;
+      fetchTickets(params);
+    }
+
+    socket.on('ticket:new', handleNewTicket);
+    socket.on('ticket:assigned', handleAssigned);
+    socket.on('ticket:updated', handleUpdated);
+
+    return () => {
+      socket.off('ticket:new', handleNewTicket);
+      socket.off('ticket:assigned', handleAssigned);
+      socket.off('ticket:updated', handleUpdated);
+    };
+  }, [user, tab, statusFilter, sectorFilter, fetchTickets]);
+
   async function handleAssign(id: string) {
     try {
       await assignTicket(id);
-      fetchTickets(tab === 'mine' ? { mine: true } : {});
     } catch {
       alert('Erro ao assumir ticket');
     }
@@ -65,7 +109,6 @@ export function Tickets() {
 
   if (!user) return null;
 
-  // Filtra conforme tab (AGENT)
   const displayed =
     user.role === 'AGENT' && tab === 'queue'
       ? tickets.filter((t) => t.status === 'WAITING' && !t.agentId)
@@ -75,7 +118,6 @@ export function Tickets() {
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-8">
-      {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-chatz-text">Atendimentos</h1>
         <p className="text-chatz-muted text-sm">
@@ -84,7 +126,6 @@ export function Tickets() {
         </p>
       </div>
 
-      {/* Tabs (AGENT) */}
       {user.role === 'AGENT' && (
         <div className="flex gap-2 mb-4">
           <TabButton active={tab === 'queue'} onClick={() => setTab('queue')}>
@@ -96,7 +137,6 @@ export function Tickets() {
         </div>
       )}
 
-      {/* Filtros */}
       <div className="flex flex-wrap gap-3 mb-6">
         <select
           value={statusFilter}
@@ -128,7 +168,6 @@ export function Tickets() {
         )}
       </div>
 
-      {/* Conteúdo */}
       {loading && (
         <div className="text-center py-16 text-chatz-muted">Carregando...</div>
       )}
@@ -189,4 +228,27 @@ function TabButton({
       {children}
     </button>
   );
+}
+
+// 🔔 Toca som "ding" simples via Web Audio API
+function playDing() {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.frequency.value = 880; // A5
+    osc.type = 'sine';
+
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.3);
+  } catch (e) {
+    console.warn('Erro ao tocar som:', e);
+  }
 }

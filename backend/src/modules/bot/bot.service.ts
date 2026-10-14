@@ -1,5 +1,6 @@
 import { prisma } from '../../config/prisma';
 import * as msg from './bot.messages';
+import { emitToSector, emitToUser } from '../../sockets/socket.server';
 
 interface BotInput {
   phone: string;
@@ -185,16 +186,29 @@ async function handleAgentChoice(
   })}`;
 
   const ticket = await prisma.ticket.create({
-    data: {
-      subject,
-      sectorId: sector.id,
-      clientId: client.id,
-      requestedAgentId: chosenAgent?.id ?? null,
-      status: 'WAITING',
-      priority: 'MEDIUM',
-      channel: 'WHATSAPP',
-    },
-  });
+  data: {
+    subject,
+    sectorId: sector.id,
+    clientId: client.id,
+    requestedAgentId: chosenAgent?.id ?? null,
+    status: 'WAITING',
+    priority: 'MEDIUM',
+    channel: 'WHATSAPP',
+  },
+  include: {
+    sector: { select: { id: true, name: true, slug: true } },
+    client: { select: { id: true, name: true, phone: true, role: true } },
+    requestedAgent: { select: { id: true, name: true, email: true, role: true } },
+  },
+});
+
+// 🔔 Notifica o setor
+emitToSector(ticket.sectorId, 'ticket:new', ticket);
+
+// 🔔 Notifica o atendente específico (se pedido)
+if (ticket.requestedAgentId) {
+  emitToUser(ticket.requestedAgentId, 'ticket:new', ticket);
+}
 
   // Atualiza Conversation
   await prisma.conversation.update({
