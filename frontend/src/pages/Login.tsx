@@ -35,32 +35,22 @@ export function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-chatz-bg p-4">
       <div className="w-full max-w-md">
-        {/* Logo */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-chatz-primary mb-1">
-            chatZ 🚀
-          </h1>
+          <h1 className="text-4xl font-bold text-chatz-primary mb-1">chatZ 🚀</h1>
           <p className="text-chatz-muted text-sm">
-            Sistema de atendimento em tempo real
+            Painel de atendimento
           </p>
         </div>
 
-        {/* Card de login */}
         <div className="bg-chatz-card border border-chatz-border rounded-2xl p-8 shadow-2xl">
-          <h2 className="text-xl font-semibold text-chatz-text mb-6">
-            Entrar
-          </h2>
+          <h2 className="text-xl font-semibold text-chatz-text mb-6">Entrar</h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label
-                htmlFor="email"
-                className="block text-sm font-medium text-chatz-muted mb-2"
-              >
+              <label className="block text-sm font-medium text-chatz-muted mb-2">
                 Email
               </label>
               <input
-                id="email"
                 type="email"
                 required
                 value={email}
@@ -74,14 +64,10 @@ export function Login() {
             </div>
 
             <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-chatz-muted mb-2"
-              >
+              <label className="block text-sm font-medium text-chatz-muted mb-2">
                 Senha
               </label>
               <input
-                id="password"
                 type="password"
                 required
                 value={password}
@@ -113,7 +99,7 @@ export function Login() {
           </form>
         </div>
 
-        {/* Atalhos de teste */}
+        {/* Atalhos (só ADMIN e AGENT) */}
         <div className="mt-6 bg-chatz-card/50 border border-chatz-border rounded-xl p-4">
           <p className="text-xs text-chatz-muted mb-3 text-center">
             🧪 Atalhos de teste (senha: 123456)
@@ -133,15 +119,7 @@ export function Login() {
                          border border-chatz-border rounded-lg text-chatz-text
                          transition-all"
             >
-              🎧 Atendente
-            </button>
-            <button
-              onClick={() => preencher('carlos@chatz.com')}
-              className="px-3 py-2 bg-chatz-bg hover:bg-chatz-card-hover
-                         border border-chatz-border rounded-lg text-chatz-text
-                         transition-all"
-            >
-              👤 Cliente
+              🎧 Ana (Suporte)
             </button>
             <button
               onClick={() => preencher('bruno@chatz.com')}
@@ -149,7 +127,15 @@ export function Login() {
                          border border-chatz-border rounded-lg text-chatz-text
                          transition-all"
             >
-              🎧 Atendente 2
+              🎧 Bruno (Certificados)
+            </button>
+            <button
+              onClick={() => preencher('carla@chatz.com')}
+              className="px-3 py-2 bg-chatz-bg hover:bg-chatz-card-hover
+                         border border-chatz-border rounded-lg text-chatz-text
+                         transition-all"
+            >
+              🎧 Carla (Comercial)
             </button>
           </div>
         </div>

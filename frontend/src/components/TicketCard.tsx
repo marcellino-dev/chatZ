@@ -10,6 +10,12 @@ interface Props {
 }
 
 export function TicketCard({ ticket, showActions, onAssign, onResolve }: Props) {
+  // Defesas contra dados incompletos
+  const sectorName = ticket.sector?.name ?? 'Sem setor';
+  const clientName = ticket.client?.name ?? 'Cliente';
+  const agentName = ticket.agent?.name;
+  const requestedName = ticket.requestedAgent?.name;
+
   const canAssign = showActions && ticket.status === 'WAITING' && !ticket.agentId;
   const canResolve =
     showActions && ticket.status === 'IN_PROGRESS' && ticket.agentId;
@@ -17,7 +23,6 @@ export function TicketCard({ ticket, showActions, onAssign, onResolve }: Props) 
   const date = new Date(ticket.createdAt).toLocaleString('pt-BR', {
     day: '2-digit',
     month: '2-digit',
-    year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   });
@@ -25,30 +30,29 @@ export function TicketCard({ ticket, showActions, onAssign, onResolve }: Props) 
   return (
     <div className="bg-chatz-card border border-chatz-border rounded-xl p-5
                     hover:border-chatz-primary/50 transition-all">
+      {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-3">
         <div className="flex-1 min-w-0">
           <h3 className="text-chatz-text font-medium truncate">{ticket.subject}</h3>
           <p className="text-chatz-muted text-xs mt-1">
-            #{ticket.id.slice(0, 8)} · {ticket.queue} · {date}
+            #{ticket.id.slice(0, 8)} · {date}
           </p>
         </div>
         <StatusBadge status={ticket.status} />
       </div>
 
-      <div className="flex items-center justify-between gap-4 mb-4">
-        <div className="flex items-center gap-4 text-xs">
-          <PriorityBadge priority={ticket.priority} />
-          <span className="text-chatz-muted">
-            👤 {ticket.client.name}
-          </span>
-          {ticket.agent && (
-            <span className="text-chatz-muted">
-              🎧 {ticket.agent.name}
-            </span>
-          )}
-        </div>
+      {/* Badges */}
+      <div className="flex flex-wrap items-center gap-3 mb-4 text-xs">
+        <PriorityBadge priority={ticket.priority} />
+        <span className="text-chatz-muted">🏢 {sectorName}</span>
+        <span className="text-chatz-muted">👤 {clientName}</span>
+        {agentName && <span className="text-chatz-muted">🎧 {agentName}</span>}
+        {requestedName && !agentName && (
+          <span className="text-chatz-primary">⭐ pediu: {requestedName}</span>
+        )}
       </div>
 
+      {/* Ações */}
       {showActions && (canAssign || canResolve) && (
         <div className="flex gap-2 pt-3 border-t border-chatz-border">
           {canAssign && (

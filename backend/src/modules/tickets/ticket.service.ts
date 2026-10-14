@@ -15,6 +15,7 @@ import {
 interface AuthUser {
   id: string;
   role: string;
+  sectorId?: string | null;
 }
 
 // ==========================
@@ -29,13 +30,17 @@ export async function createTicket(user: AuthUser, data: CreateTicketInput) {
     data: {
       subject: data.subject,
       priority: data.priority ?? 'MEDIUM',
-      queue: data.queue ?? 'geral',
+      sectorId: data.sectorId,
       clientId: user.id,
       status: 'WAITING',
+      channel: 'WEB',
     },
     include: {
+      sector: {
+        select: { id: true, name: true, slug: true },
+      },
       client: {
-        select: { id: true, name: true, email: true, role: true },
+        select: { id: true, name: true, phone: true, role: true },
       },
     },
   });
@@ -54,9 +59,13 @@ export async function listTickets(user: AuthUser, query: ListTicketsQuery) {
     where.clientId = user.id;
   } else if (user.role === 'AGENT') {
     if (query.mine) {
+      // Só tickets que ele assumiu
       where.agentId = user.id;
     } else {
-      // Fila + assumidos
+      // Fila do setor dele + assumidos por ele
+      if (user.sectorId) {
+        where.sectorId = user.sectorId;
+      }
       where.OR = [{ agentId: null }, { agentId: user.id }];
     }
   }
@@ -65,19 +74,22 @@ export async function listTickets(user: AuthUser, query: ListTicketsQuery) {
   // Filtros opcionais
   if (query.status) where.status = query.status;
   if (query.priority) where.priority = query.priority;
-  if (query.queue) where.queue = query.queue;
+  if (query.sectorId) where.sectorId = query.sectorId;
 
   const tickets = await prisma.ticket.findMany({
     where,
-    orderBy: [
-      { priority: 'desc' }, // URGENT primeiro
-      { createdAt: 'asc' }, // mais antigo primeiro na fila
-    ],
+    orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
     include: {
+      sector: {
+        select: { id: true, name: true, slug: true },
+      },
       client: {
-        select: { id: true, name: true, email: true, role: true },
+        select: { id: true, name: true, phone: true, role: true },
       },
       agent: {
+        select: { id: true, name: true, email: true, role: true },
+      },
+      requestedAgent: {
         select: { id: true, name: true, email: true, role: true },
       },
       _count: {
@@ -96,10 +108,16 @@ export async function getTicketById(user: AuthUser, id: string) {
   const ticket = await prisma.ticket.findUnique({
     where: { id },
     include: {
+      sector: {
+        select: { id: true, name: true, slug: true },
+      },
       client: {
-        select: { id: true, name: true, email: true, role: true },
+        select: { id: true, name: true, phone: true, role: true },
       },
       agent: {
+        select: { id: true, name: true, email: true, role: true },
+      },
+      requestedAgent: {
         select: { id: true, name: true, email: true, role: true },
       },
     },
@@ -126,6 +144,15 @@ export async function assignTicket(user: AuthUser, id: string) {
     throw new AppError('Ticket não encontrado', 404);
   }
 
+  // AGENT só pode assumir tickets do próprio setor
+  if (
+    user.role === 'AGENT' &&
+    user.sectorId &&
+    ticket.sectorId !== user.sectorId
+  ) {
+    throw new AppError('Você só pode assumir tickets do seu setor', 403);
+  }
+
   if (!canAssignTicket(user, ticket)) {
     throw new AppError('Não é possível assumir este ticket', 403);
   }
@@ -137,10 +164,16 @@ export async function assignTicket(user: AuthUser, id: string) {
       status: 'IN_PROGRESS',
     },
     include: {
+      sector: {
+        select: { id: true, name: true, slug: true },
+      },
       client: {
-        select: { id: true, name: true, email: true, role: true },
+        select: { id: true, name: true, phone: true, role: true },
       },
       agent: {
+        select: { id: true, name: true, email: true, role: true },
+      },
+      requestedAgent: {
         select: { id: true, name: true, email: true, role: true },
       },
     },

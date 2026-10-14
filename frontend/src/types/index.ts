@@ -3,12 +3,26 @@
 // ==========================
 export type Role = 'ADMIN' | 'AGENT' | 'CLIENT';
 
+export interface Sector {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  _count?: { users: number; tickets: number };
+}
+
 export interface User {
   id: string;
   name: string;
-  email: string;
+  email: string | null;
+  phone: string | null;
   role: Role;
   active: boolean;
+  sectorId: string | null;
+  sector?: Pick<Sector, 'id' | 'name' | 'slug'> | null;
   createdAt: string;
 }
 
@@ -18,12 +32,6 @@ export interface AuthResponse {
 }
 
 export interface LoginPayload {
-  email: string;
-  password: string;
-}
-
-export interface RegisterPayload {
-  name: string;
   email: string;
   password: string;
 }
@@ -45,21 +53,19 @@ export interface Ticket {
   subject: string;
   status: TicketStatus;
   priority: TicketPriority;
-  queue: string;
+  channel: 'WHATSAPP' | 'WEB';
+  sectorId: string;
   clientId: string;
+  requestedAgentId: string | null;
   agentId: string | null;
   createdAt: string;
   updatedAt: string;
   closedAt: string | null;
 
-  client: Pick<User, 'id' | 'name' | 'email' | 'role'>;
+  sector: Pick<Sector, 'id' | 'name' | 'slug'>;
+  client: Pick<User, 'id' | 'name' | 'phone' | 'role'>;
   agent: Pick<User, 'id' | 'name' | 'email' | 'role'> | null;
+  requestedAgent: Pick<User, 'id' | 'name' | 'email' | 'role'> | null;
 
   _count?: { messages: number };
-}
-
-export interface CreateTicketPayload {
-  subject: string;
-  priority?: TicketPriority;
-  queue?: string;
 }

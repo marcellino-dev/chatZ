@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useTicketsStore } from '../stores/tickets';
 import { useAuthStore } from '../stores/auth';
+import { useSectorsStore } from '../stores/sectors';
 import { TicketCard } from '../components/TicketCard';
-import { NewTicketModal } from '../components/NewTicketModal';
 import type { TicketStatus } from '../types';
 
 type Tab = 'queue' | 'mine' | 'all';
 
 export function Tickets() {
   const user = useAuthStore((s) => s.user);
+  const { sectors, fetchSectors } = useSectorsStore();
   const {
     tickets,
     loading,
@@ -18,36 +19,38 @@ export function Tickets() {
     updateStatus,
   } = useTicketsStore();
 
-  const [modalOpen, setModalOpen] = useState(false);
-  const [tab, setTab] = useState<Tab>(
-    user?.role === 'CLIENT' ? 'all' : 'queue'
-  );
+  const [tab, setTab] = useState<Tab>('queue');
   const [statusFilter, setStatusFilter] = useState<TicketStatus | ''>('');
+  const [sectorFilter, setSectorFilter] = useState<string>('');
 
-  // Carrega conforme tab
+  // Carrega setores (pra filtro)
+  useEffect(() => {
+    if (user?.role === 'ADMIN') {
+      fetchSectors();
+    }
+  }, [user, fetchSectors]);
+
+  // Carrega tickets
   useEffect(() => {
     if (!user) return;
 
     const params: any = {};
 
-    if (user.role === 'CLIENT') {
-      // Cliente: só os próprios
-    } else if (user.role === 'AGENT') {
+    if (user.role === 'AGENT') {
       if (tab === 'mine') params.mine = true;
-      // tab === 'queue' → default (fila + assumidos)
     }
 
     if (statusFilter) params.status = statusFilter;
+    if (sectorFilter) params.sectorId = sectorFilter;
 
     fetchTickets(params);
-  }, [user, tab, statusFilter, fetchTickets]);
+  }, [user, tab, statusFilter, sectorFilter, fetchTickets]);
 
   async function handleAssign(id: string) {
     try {
       await assignTicket(id);
-      // Recarrega pra atualizar as abas
       fetchTickets(tab === 'mine' ? { mine: true } : {});
-    } catch (err) {
+    } catch {
       alert('Erro ao assumir ticket');
     }
   }
@@ -55,17 +58,17 @@ export function Tickets() {
   async function handleResolve(id: string) {
     try {
       await updateStatus(id, 'RESOLVED');
-    } catch (err) {
+    } catch {
       alert('Erro ao resolver ticket');
     }
   }
 
   if (!user) return null;
 
-  // Filtra localmente conforme tab
+  // Filtra conforme tab (AGENT)
   const displayed =
     user.role === 'AGENT' && tab === 'queue'
-      ? tickets.filter((t) => !t.agentId && t.status === 'WAITING')
+      ? tickets.filter((t) => t.status === 'WAITING' && !t.agentId)
       : user.role === 'AGENT' && tab === 'mine'
       ? tickets.filter((t) => t.agentId === user.id)
       : tickets;
@@ -73,30 +76,17 @@ export function Tickets() {
   return (
     <div className="max-w-6xl mx-auto px-6 py-8">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-chatz-text">Atendimentos</h1>
-          <p className="text-chatz-muted text-sm">
-            {user.role === 'CLIENT' && 'Seus chamados abertos'}
-            {user.role === 'AGENT' && 'Fila e seus atendimentos'}
-            {user.role === 'ADMIN' && 'Visão geral do sistema'}
-          </p>
-        </div>
-
-        {user.role === 'CLIENT' && (
-          <button
-            onClick={() => setModalOpen(true)}
-            className="px-5 py-2.5 bg-chatz-primary hover:bg-chatz-primary-hover
-                       text-white font-medium rounded-lg transition-all"
-          >
-            ➕ Novo atendimento
-          </button>
-        )}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-chatz-text">Atendimentos</h1>
+        <p className="text-chatz-muted text-sm">
+          {user.role === 'AGENT' && `Setor ${user.sector?.name ?? ''} · Fila e seus atendimentos`}
+          {user.role === 'ADMIN' && 'Visão geral do sistema'}
+        </p>
       </div>
 
-      {/* Tabs (só pra AGENT) */}
+      {/* Tabs (AGENT) */}
       {user.role === 'AGENT' && (
-        <div className="flex gap-2 mb-6">
+        <div className="flex gap-2 mb-4">
           <TabButton active={tab === 'queue'} onClick={() => setTab('queue')}>
             📥 Fila
           </TabButton>
@@ -106,8 +96,8 @@ export function Tickets() {
         </div>
       )}
 
-      {/* Filtro de status */}
-      <div className="mb-6">
+      {/* Filtros */}
+      <div className="flex flex-wrap gap-3 mb-6">
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as TicketStatus | '')}
@@ -120,6 +110,22 @@ export function Tickets() {
           <option value="RESOLVED">Resolvido</option>
           <option value="CLOSED">Fechado</option>
         </select>
+
+        {user.role === 'ADMIN' && (
+          <select
+            value={sectorFilter}
+            onChange={(e) => setSectorFilter(e.target.value)}
+            className="px-4 py-2 bg-chatz-card border border-chatz-border rounded-lg
+                       text-chatz-text text-sm focus:border-chatz-primary transition-all"
+          >
+            <option value="">Todos os setores</option>
+            {sectors.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Conteúdo */}
@@ -137,21 +143,11 @@ export function Tickets() {
       {!loading && displayed.length === 0 && (
         <div className="text-center py-16 bg-chatz-card/50 border border-chatz-border
                         border-dashed rounded-2xl">
-          <p className="text-chatz-muted text-lg mb-2">
-            {user.role === 'CLIENT'
-              ? '📭 Você ainda não abriu nenhum atendimento'
-              : tab === 'queue'
+          <p className="text-chatz-muted text-lg">
+            {tab === 'queue'
               ? '✨ Fila vazia! Nenhum ticket aguardando'
               : '📭 Nenhum atendimento encontrado'}
           </p>
-          {user.role === 'CLIENT' && (
-            <button
-              onClick={() => setModalOpen(true)}
-              className="text-chatz-primary hover:text-chatz-primary-hover text-sm font-medium"
-            >
-              Criar o primeiro atendimento
-            </button>
-          )}
         </div>
       )}
 
@@ -168,8 +164,6 @@ export function Tickets() {
           ))}
         </div>
       )}
-
-      <NewTicketModal isOpen={modalOpen} onClose={() => setModalOpen(false)} />
     </div>
   );
 }
