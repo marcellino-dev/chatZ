@@ -1,6 +1,7 @@
 import { prisma } from '../../config/prisma';
 import * as msg from './bot.messages';
 import { emitToSector, emitToUser, emitToTicket } from '../../sockets/socket.server';
+import { sendWhatsAppMessage } from '../whatsapp/whatsapp.service';
 
 interface BotInput {
   phone: string;
@@ -35,31 +36,46 @@ export async function processMessage(input: BotInput): Promise<BotReply> {
 
     await ensureClientUser(phone);
 
-    return {
-      reply: await buildSectorMenu(),
-    };
+    const reply = await buildSectorMenu();
+    await sendWhatsAppMessage({ phone, text: reply });
+
+    return { reply };
   }
 
   // Roteia conforme estado
   switch (conversation.state) {
-    case 'WAITING_SECTOR':
-      return handleSectorChoice(conversation, message);
+    case 'WAITING_SECTOR': {
+      const result = await handleSectorChoice(conversation, message);
+      if (result.reply) {
+        await sendWhatsAppMessage({ phone, text: result.reply });
+      }
+      return result;
+    }
 
-    case 'WAITING_AGENT':
-      return handleAgentChoice(conversation, message);
+    case 'WAITING_AGENT': {
+      const result = await handleAgentChoice(conversation, message);
+      if (result.reply) {
+        await sendWhatsAppMessage({ phone, text: result.reply });
+      }
+      return result;
+    }
 
-    case 'WAITING_ATTENDANCE':
-      return {
-        reply: msg.messages.alreadyInAttendance,
-      };
+    case 'WAITING_ATTENDANCE': {
+      const reply = msg.messages.alreadyInAttendance;
+      await sendWhatsAppMessage({ phone, text: reply });
+      return { reply };
+    }
 
-    case 'IN_ATTENDANCE':
+    case 'IN_ATTENDANCE': {
+      // Mensagem do cliente durante atendimento — NÃO responde (atendente humano responde)
       return handleInAttendance(conversation, message);
+    }
 
-    default:
-      return {
-        reply: msg.messages.greeting + '\n\n' + (await buildSectorMenu()),
-      };
+    default: {
+      const reply = msg.messages.greeting + '\n\n' + (await buildSectorMenu());
+      await sendWhatsAppMessage({ phone, text: reply });
+      return { reply };
+    }
   }
 }
 
@@ -204,7 +220,7 @@ async function handleAgentChoice(
     },
   });
 
-  // 🔔 Notifica o setor
+  // 🔔 Notifica o setor (tempo real no painel)
   emitToSector(ticket.sectorId, 'ticket:new', ticket);
 
   // 🔔 Notifica o atendente específico (se pedido)

@@ -1,6 +1,7 @@
 import { prisma } from '../../config/prisma';
 import { AppError } from '../../middlewares/errorHandler';
 import { emitToTicket, emitToSector } from '../../sockets/socket.server';
+import { sendWhatsAppMessage } from '../whatsapp/whatsapp.service';
 import { SendMessageInput } from './message.schemas';
 
 interface AuthUser {
@@ -10,7 +11,7 @@ interface AuthUser {
 }
 
 // ==========================
-// LISTAR MENSAGENS DE UM TICKET
+// LISTAR MENSAGENS
 // ==========================
 export async function listMessages(user: AuthUser, ticketId: string) {
   const ticket = await prisma.ticket.findUnique({
@@ -19,7 +20,6 @@ export async function listMessages(user: AuthUser, ticketId: string) {
 
   if (!ticket) throw new AppError('Ticket não encontrado', 404);
 
-  // Permissões
   if (user.role === 'CLIENT' && ticket.clientId !== user.id) {
     throw new AppError('Sem permissão', 403);
   }
@@ -42,7 +42,6 @@ export async function listMessages(user: AuthUser, ticketId: string) {
     },
   });
 
-  // Marca mensagens do cliente como lidas (quando o atendente abre)
   if (user.role !== 'CLIENT') {
     await prisma.message.updateMany({
       where: {
@@ -76,7 +75,6 @@ export async function sendMessage(
 
   if (!ticket) throw new AppError('Ticket não encontrado', 404);
 
-  // Permissões
   if (user.role === 'CLIENT' && ticket.clientId !== user.id) {
     throw new AppError('Sem permissão', 403);
   }
@@ -87,7 +85,6 @@ export async function sendMessage(
     );
   }
 
-  // Cria a mensagem
   const message = await prisma.message.create({
     data: {
       content: data.content,
@@ -102,16 +99,22 @@ export async function sendMessage(
     },
   });
 
-  // 🔔 Emite via Socket.IO pra sala do ticket
+  // 🔔 Emite via Socket.IO
   emitToTicket(ticketId, 'message:new', message);
-
-  // 🔔 Notifica o setor (pra quem tá com a lista aberta)
   emitToSector(ticket.sectorId, 'ticket:updated', ticket);
 
-  // TODO (futuro): enviar via Evolution API pro WhatsApp
-  // if (ticket.channel === 'WHATSAPP') {
-  //   await whatsappService.sendMessage(ticket.client.phone, data.content);
-  // }
+  // 📱 Envia pro WhatsApp (se for do atendente pro cliente)
+  if (user.role !== 'CLIENT' && ticket.client.phone) {
+    try {
+      await sendWhatsAppMessage({
+        phone: ticket.client.phone,
+        text: data.content,
+      });
+    } catch (err) {
+      console.error('⚠️ Erro ao enviar WhatsApp (mensagem salva no banco):', err);
+      // Não estoura erro — a mensagem tá no banco, só o envio falhou
+    }
+  }
 
   return message;
 }

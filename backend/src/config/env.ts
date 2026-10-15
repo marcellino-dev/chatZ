@@ -7,6 +7,11 @@ const envSchema = z.object({
   DATABASE_URL: z.string(),
   JWT_SECRET: z.string().min(16, 'JWT_SECRET precisa ter no mínimo 16 caracteres'),
   JWT_EXPIRES_IN: z.string().default('7d'),
+
+  // Evolution API
+  EVOLUTION_API_URL: z.string().url().default('http://localhost:8080'),
+  EVOLUTION_API_KEY: z.string(),
+  EVOLUTION_INSTANCE: z.string().default('chatz'),
 });
 
 const parsed = envSchema.safeParse(process.env);
