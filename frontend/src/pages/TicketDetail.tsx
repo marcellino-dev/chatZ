@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, FormEvent } from 'react';
+import { useEffect, useState, useRef, type FormEvent } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/auth';
 import { useMessagesStore } from '../stores/messages';

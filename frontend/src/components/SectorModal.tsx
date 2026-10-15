@@ -1,4 +1,4 @@
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { useSectorsStore } from '../stores/sectors';
 import { getErrorMessage } from '../lib/api';
 import type { Sector } from '../types';

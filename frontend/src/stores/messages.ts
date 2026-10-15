@@ -1,20 +1,6 @@
 import { create } from 'zustand';
 import { api } from '../lib/api';
-
-export interface Message {
-  id: string;
-  content: string;
-  channel: 'WHATSAPP' | 'WEB';
-  read: boolean;
-  ticketId: string;
-  senderId: string;
-  createdAt: string;
-  sender: {
-    id: string;
-    name: string;
-    role: string;
-  };
-}
+import type { Message } from '../types';
 
 interface MessagesState {
   messages: Message[];
@@ -47,11 +33,9 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
 
   sendMessage: async (ticketId, content) => {
     await api.post(`/tickets/${ticketId}/messages`, { content });
-    // A mensagem vem via Socket.IO, então não adiciona manualmente
   },
 
   addMessage: (message) => {
-    // Evita duplicar (se já tem pelo ID)
     if (get().messages.some((m) => m.id === message.id)) return;
     set({ messages: [...get().messages, message] });
   },

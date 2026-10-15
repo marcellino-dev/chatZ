@@ -7,8 +7,6 @@ export function connectSocket(token: string): Socket {
     socket.disconnect();
   }
 
-  // Em produção: variável de ambiente
-  // Em dev: localhost:3000
   const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000';
 
   socket = io(socketUrl, {
@@ -16,5 +14,28 @@ export function connectSocket(token: string): Socket {
     transports: ['websocket'],
   });
 
-  // ... resto igual
+  socket.on('connect', () => {
+    console.log('🔌 Socket conectado');
+  });
+
+  socket.on('disconnect', () => {
+    console.log('🔌 Socket desconectado');
+  });
+
+  socket.on('connect_error', (err) => {
+    console.error('🔌 Erro de conexão:', err.message);
+  });
+
+  return socket;
+}
+
+export function disconnectSocket() {
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
+}
+
+export function getSocket(): Socket | null {
+  return socket;
 }
