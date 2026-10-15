@@ -14,33 +14,27 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const VARIANTS: Record<Variant, string> = {
-  // Botão principal — azul sólido
   primary:
     'bg-chatz-primary text-white hover:bg-chatz-primary-hover ' +
     'shadow-[0_4px_14px_rgba(59,130,246,0.35)] hover:shadow-[0_8px_24px_rgba(59,130,246,0.40)]',
 
-  // Botão com gradiente — o "Entrar na plataforma" do mockup
   gradient:
-    'text-white bg-chatz-gradient ' +
-    'shadow-[0_4px_14px_rgba(139,92,246,0.35)] hover:shadow-[0_8px_24px_rgba(139,92,246,0.45)] ' +
-    'hover:brightness-105',
+    'text-white bg-chatz-button-gradient ' +
+    'shadow-[0_4px_14px_rgba(236,72,153,0.35)] hover:shadow-[0_8px_24px_rgba(236,72,153,0.45)] ' +
+    'hover:brightness-105 hover:saturate-110',
 
-  // Secundário — fundo cinza claro
   secondary:
     'bg-chatz-surface-alt text-chatz-text border border-chatz-border ' +
     'hover:bg-chatz-surface-hover hover:border-chatz-border-strong',
 
-  // Outline — só borda
   outline:
     'bg-transparent text-chatz-text border border-chatz-border ' +
     'hover:bg-chatz-surface-alt hover:border-chatz-border-strong',
 
-  // Ghost — sem fundo
   ghost:
     'bg-transparent text-chatz-text-muted hover:text-chatz-text ' +
     'hover:bg-chatz-surface-alt',
 
-  // Perigo — vermelho
   danger:
     'bg-chatz-danger text-white hover:bg-red-600 ' +
     'shadow-[0_4px_14px_rgba(239,68,68,0.30)]',

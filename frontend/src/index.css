@@ -66,18 +66,24 @@ input:focus, button:focus, textarea:focus, select:focus {
    UTILITÁRIOS CUSTOMIZADOS
    ========================== */
 
-/* Gradiente principal do chatZ */
+/* Gradiente principal — mais quente (azul → roxo → rosa → laranja) */
 .bg-chatz-gradient {
-  background: linear-gradient(135deg, #3B82F6 0%, #8B5CF6 50%, #EC4899 100%);
+  background: linear-gradient(135deg, #3B82F6 0%, #A855F7 25%, #EC4899 60%, #F97316 100%);
 }
 
+/* Gradiente do botão (horizontal — igual referência) */
+.bg-chatz-button-gradient {
+  background: linear-gradient(90deg, #3B82F6 0%, #8B5CF6 40%, #EC4899 100%);
+}
+
+/* Gradiente suave (fundos de cards leves) */
 .bg-chatz-gradient-soft {
-  background: linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF2F8 100%);
+  background: linear-gradient(135deg, #EFF6FF 0%, #FAF5FF 30%, #FDF2F8 60%, #FFF7ED 100%);
 }
 
-/* Texto com gradiente */
+/* Texto com gradiente — mesmo esquema do botão */
 .text-chatz-gradient {
-  background: linear-gradient(135deg, #3B82F6 0%, #8B5CF6 50%, #EC4899 100%);
+  background: linear-gradient(90deg, #3B82F6 0%, #A855F7 35%, #EC4899 65%, #F97316 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -110,4 +116,11 @@ select {
   background-position: right 12px center;
   background-size: 16px;
   padding-right: 40px;
+}
+
+/* ==========================
+   IMAGENS — melhora renderização
+   ========================== */
+img {
+  image-rendering: -webkit-optimize-contrast;
 }

@@ -21,6 +21,21 @@ export const colors = {
   primaryLight: '#EFF6FF',
   primaryBorder: '#BFDBFE',
 
+  purple: '#A855F7',
+  purpleHover: '#9333EA',
+  purpleLight: '#FAF5FF',
+  purpleBorder: '#E9D5FF',
+
+  pink: '#EC4899',
+  pinkHover: '#DB2777',
+  pinkLight: '#FDF2F8',
+  pinkBorder: '#FBCFE8',
+
+  orange: '#F97316',
+  orangeHover: '#EA580C',
+  orangeLight: '#FFF7ED',
+  orangeBorder: '#FED7AA',
+
   success: '#10B981',
   successLight: '#ECFDF5',
   successBorder: '#A7F3D0',
@@ -32,22 +47,26 @@ export const colors = {
   danger: '#EF4444',
   dangerLight: '#FEF2F2',
   dangerBorder: '#FECACA',
-
-  accent: '#8B5CF6',
-  accentLight: '#F5F3FF',
-  accentBorder: '#DDD6FE',
-
-  pink: '#EC4899',
-  pinkLight: '#FDF2F8',
-  pinkBorder: '#FBCFE8',
 } as const;
 
 export const gradients = {
-  primary: 'linear-gradient(135deg, #3B82F6 0%, #8B5CF6 50%, #EC4899 100%)',
+  // Gradiente principal (mais quente)
+  primary: 'linear-gradient(135deg, #3B82F6 0%, #A855F7 25%, #EC4899 60%, #F97316 100%)',
+
+  // Gradiente do botão (horizontal)
+  button: 'linear-gradient(90deg, #3B82F6 0%, #8B5CF6 40%, #EC4899 100%)',
+
+  // Gradiente do texto
+  text: 'linear-gradient(90deg, #3B82F6 0%, #A855F7 35%, #EC4899 65%, #F97316 100%)',
+
+  // Gradiente suave (fundos)
   primarySoft:
-    'linear-gradient(135deg, #EFF6FF 0%, #F5F3FF 50%, #FDF2F8 100%)',
-  blueToPurple: 'linear-gradient(135deg, #3B82F6 0%, #8B5CF6 100%)',
-  purpleToPink: 'linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%)',
+    'linear-gradient(135deg, #EFF6FF 0%, #FAF5FF 30%, #FDF2F8 60%, #FFF7ED 100%)',
+
+  // Variações curtas
+  blueToPurple: 'linear-gradient(135deg, #3B82F6 0%, #A855F7 100%)',
+  purpleToPink: 'linear-gradient(135deg, #A855F7 0%, #EC4899 100%)',
+  pinkToOrange: 'linear-gradient(135deg, #EC4899 0%, #F97316 100%)',
 } as const;
 
 export const shadows = {
@@ -58,6 +77,8 @@ export const shadows = {
   '2xl': '0 24px 48px rgba(15, 23, 42, 0.12)',
   primary: '0 4px 14px rgba(59, 130, 246, 0.35)',
   'primary-lg': '0 8px 24px rgba(59, 130, 246, 0.40)',
+  pink: '0 4px 14px rgba(236, 72, 153, 0.35)',
+  'pink-lg': '0 8px 24px rgba(236, 72, 153, 0.45)',
 } as const;
 
 export const radius = {
@@ -84,7 +105,6 @@ export const typography = {
   fontDisplay: "'Plus Jakarta Sans', 'Inter', sans-serif",
 } as const;
 
-// Helper: gradiente como CSS inline (para style={})
 export function gradient(style: keyof typeof gradients) {
   return { background: gradients[style] };
 }
