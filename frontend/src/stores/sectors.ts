@@ -8,9 +8,17 @@ interface SectorsState {
   error: string | null;
 
   fetchSectors: (onlyActive?: boolean) => Promise<void>;
-  createSector: (data: { name: string; slug: string; description?: string }) => Promise<Sector>;
-  updateSector: (id: string, data: Partial<Sector>) => Promise<void>;
+  createSector: (data: {
+    name: string;
+    slug: string;
+    description?: string;
+  }) => Promise<Sector>;
+  updateSector: (
+    id: string,
+    data: { name?: string; description?: string; active?: boolean }
+  ) => Promise<void>;
   deleteSector: (id: string) => Promise<void>;
+  getSectorById: (id: string) => Promise<any>;
 }
 
 export const useSectorsStore = create<SectorsState>((set, get) => ({
@@ -47,11 +55,14 @@ export const useSectorsStore = create<SectorsState>((set, get) => ({
   },
 
   deleteSector: async (id) => {
-    await api.delete(`/sectors/${id}`);
+    const { data: updated } = await api.delete<Sector>(`/sectors/${id}`);
     set({
-      sectors: get().sectors.map((s) =>
-        s.id === id ? { ...s, active: false } : s
-      ),
+      sectors: get().sectors.map((s) => (s.id === id ? updated : s)),
     });
+  },
+
+  getSectorById: async (id) => {
+    const { data } = await api.get(`/sectors/${id}`);
+    return data;
   },
 }));

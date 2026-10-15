@@ -120,3 +120,119 @@ export async function createUser(data: CreateUserInput) {
 
   return user;
 }
+// ==========================
+// LISTAR USUÁRIOS (só ADMIN)
+// ==========================
+export async function listUsers() {
+  const users = await prisma.user.findMany({
+    orderBy: [{ role: 'asc' }, { name: 'asc' }],
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      phone: true,
+      role: true,
+      active: true,
+      sectorId: true,
+      sector: {
+        select: { id: true, name: true, slug: true },
+      },
+      createdAt: true,
+    },
+  });
+
+  return users;
+}
+
+// ==========================
+// ATUALIZAR USUÁRIO (só ADMIN)
+// ==========================
+export async function updateUser(
+  id: string,
+  data: {
+    name?: string;
+    email?: string;
+    password?: string;
+    role?: 'ADMIN' | 'AGENT';
+    sectorId?: string | null;
+    active?: boolean;
+  }
+) {
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) throw new AppError('Usuário não encontrado', 404);
+
+  const updateData: any = { ...data };
+
+  // Se tem senha, hasheia
+  if (data.password) {
+    updateData.password = await bcrypt.hash(data.password, 10);
+  }
+
+  // Se mudou role pra ADMIN, limpa sectorId
+  if (data.role === 'ADMIN') {
+    updateData.sectorId = null;
+  }
+
+  // Se mudou sectorId, valida se existe
+  if (data.sectorId) {
+    const sector = await prisma.sector.findUnique({
+      where: { id: data.sectorId },
+    });
+    if (!sector) throw new AppError('Setor não encontrado', 404);
+  }
+
+  // Se mudou email, valida duplicidade
+  if (data.email && data.email !== user.email) {
+    const existing = await prisma.user.findUnique({
+      where: { email: data.email },
+    });
+    if (existing) throw new AppError('Email já cadastrado', 409);
+  }
+
+  const updated = await prisma.user.update({
+    where: { id },
+    data: updateData,
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      phone: true,
+      role: true,
+      active: true,
+      sectorId: true,
+      sector: {
+        select: { id: true, name: true, slug: true },
+      },
+      createdAt: true,
+    },
+  });
+
+  return updated;
+}
+
+// ==========================
+// DELETAR USUÁRIO (soft delete, só ADMIN)
+// ==========================
+export async function deleteUser(id: string, currentUserId: string) {
+  if (id === currentUserId) {
+    throw new AppError('Você não pode desativar a si mesmo', 400);
+  }
+
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) throw new AppError('Usuário não encontrado', 404);
+
+  const updated = await prisma.user.update({
+    where: { id },
+    data: { active: false },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      active: true,
+      sectorId: true,
+    },
+  });
+
+  return updated;
+}

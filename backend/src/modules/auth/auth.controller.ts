@@ -51,3 +51,53 @@ export async function createUser(
     return next(err);
   }
 }
+// ==========================
+// LISTAR USUÁRIOS
+// ==========================
+export async function listUsers(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const users = await authService.listUsers();
+    return res.json(users);
+  } catch (err) {
+    return next(err);
+  }
+}
+
+// ==========================
+// ATUALIZAR USUÁRIO
+// ==========================
+export async function updateUser(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const updated = await authService.updateUser(req.params.id, req.body);
+    return res.json(updated);
+  } catch (err) {
+    return next(err);
+  }
+}
+
+// ==========================
+// DELETAR USUÁRIO (soft)
+// ==========================
+export async function deleteUser(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const deleted = await authService.deleteUser(
+      req.params.id,
+      req.user!.id
+    );
+    return res.json(deleted);
+  } catch (err) {
+    return next(err);
+  }
+}

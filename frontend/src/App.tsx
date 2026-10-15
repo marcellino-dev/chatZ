@@ -4,6 +4,8 @@ import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
 import { Tickets } from './pages/Tickets';
 import { TicketDetail } from './pages/TicketDetail';
+import { Sectors } from './pages/Sectors';
+import { Users } from './pages/Users';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Layout } from './components/Layout';
 import { useAuthStore } from './stores/auth';
@@ -23,13 +25,17 @@ export default function App() {
           path="/login"
           element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />}
         />
+
         <Route element={<ProtectedRoute />}>
           <Route element={<Layout />}>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/tickets" element={<Tickets />} />
             <Route path="/tickets/:id" element={<TicketDetail />} />
+            <Route path="/sectors" element={<Sectors />} />
+            <Route path="/users" element={<Users />} />
           </Route>
         </Route>
+
         <Route
           path="/"
           element={<Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />}
