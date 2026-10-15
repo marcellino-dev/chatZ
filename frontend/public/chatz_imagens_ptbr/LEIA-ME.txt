@@ -1,0 +1,20 @@
+chatZ — Imagens para o site (Português do Brasil)
+
+Arquivos incluídos:
+- barra-canais.png — painel lateral com os canais de atendimento
+- lista-conversas.png — lista de conversas e contatos
+- janela-atendimento.png — janela de mensagens
+- icone-whatsapp.png — ícone flutuante do WhatsApp
+- icone-instagram.png — ícone flutuante do Instagram
+- icone-facebook.png — ícone flutuante do Facebook
+- icone-email.png — ícone flutuante de e-mail
+- icone-site.png — ícone flutuante do site
+- imagem-referencia.png — imagem completa usada como referência
+
+Como usar:
+1. Extraia os arquivos.
+2. Copie os PNGs para a pasta public/imagens do seu projeto Next.js.
+3. Use, por exemplo: <img src="/imagens/lista-conversas.png" alt="Lista de conversas do chatZ" />
+
+Observação:
+Estes arquivos são recortes da imagem de referência enviada. Alguns podem manter parte do fundo e das sombras originais; não são os arquivos-fonte individuais dos elementos.

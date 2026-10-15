@@ -5,9 +5,6 @@ interface SendMessageOptions {
   text: string;
 }
 
-// ==========================
-// ENVIAR MENSAGEM VIA EVOLUTION API
-// ==========================
 export async function sendWhatsAppMessage({
   phone,
   text,
@@ -18,6 +15,10 @@ export async function sendWhatsAppMessage({
     number: normalizePhone(phone),
     text,
   };
+
+  console.log(`📤 [EVOLUTION] Enviando para ${phone}:`);
+  console.log(`   ┌─ ${text.split('\n').join('\n   │ ')}`);
+  console.log(`   └─`);
 
   try {
     const response = await fetch(url, {
@@ -36,7 +37,7 @@ export async function sendWhatsAppMessage({
     }
 
     const data = await response.json();
-    console.log(`📤 Mensagem enviada para ${phone}:`, data.key?.id);
+    console.log(`   ✅ Enviada (id: ${data.key?.id})`);
     return data;
   } catch (err) {
     console.error('❌ Erro ao enviar mensagem:', err);
@@ -44,9 +45,6 @@ export async function sendWhatsAppMessage({
   }
 }
 
-// ==========================
-// ENVIAR MENU COM BOTÕES (opcional)
-// ==========================
 export async function sendWhatsAppButtons({
   phone,
   title,
@@ -58,8 +56,6 @@ export async function sendWhatsAppButtons({
   description: string;
   buttons: { id: string; text: string }[];
 }) {
-  // Implementação futura - menu interativo
-  // Por enquanto, envia como texto
   const text = `${title}\n\n${description}\n\n${buttons
     .map((b, i) => `${i + 1}️⃣ ${b.text}`)
     .join('\n')}`;
@@ -67,17 +63,10 @@ export async function sendWhatsAppButtons({
   return sendWhatsAppMessage({ phone, text });
 }
 
-// ==========================
-// NORMALIZA TELEFONE
-// ==========================
 function normalizePhone(phone: string): string {
-  // Remove tudo que não é dígito
   const digits = phone.replace(/\D/g, '');
-
-  // Adiciona DDI 55 se não tiver
   if (digits.length === 11 && !digits.startsWith('55')) {
     return `55${digits}`;
   }
-
   return digits;
 }

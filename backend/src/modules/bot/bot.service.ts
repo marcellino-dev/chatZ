@@ -20,17 +20,31 @@ export async function processMessage(input: BotInput): Promise<BotReply> {
   const phone = normalizePhone(input.phone);
   const message = input.message.trim();
 
+  console.log('');
+  console.log('═══════════════════════════════════════════════════');
+  console.log(`🤖 BOT [${phone}]`);
+  console.log(`📩 Recebido: "${message}"`);
+
   // Busca ou cria Conversation
   let conversation = await prisma.conversation.findUnique({
     where: { phone },
+    include: {
+      sector: { select: { id: true, name: true, slug: true } },
+    },
   });
 
   // Primeira vez → cria e mostra setores
   if (!conversation) {
+    console.log('🆕 Primeira vez — criando Conversation em WAITING_SECTOR');
+    console.log('───────────────────────────────────────────────────');
+
     conversation = await prisma.conversation.create({
       data: {
         phone,
         state: 'WAITING_SECTOR',
+      },
+      include: {
+        sector: { select: { id: true, name: true, slug: true } },
       },
     });
 
@@ -39,41 +53,87 @@ export async function processMessage(input: BotInput): Promise<BotReply> {
     const reply = await buildSectorMenu();
     await sendWhatsAppMessage({ phone, text: reply });
 
+    console.log('═══════════════════════════════════════════════════');
     return { reply };
   }
+
+  // Loga estado atual
+  console.log(`📍 Estado atual: ${conversation.state}`);
+  if (conversation.sector) {
+    console.log(`🏢 Setor: ${conversation.sector.name} (${conversation.sector.slug})`);
+  } else {
+    console.log(`🏢 Setor: (nenhum)`);
+  }
+  if (conversation.ticketId) {
+    console.log(`🎫 Ticket: ${conversation.ticketId}`);
+  } else {
+    console.log(`🎫 Ticket: (nenhum)`);
+  }
+  console.log('───────────────────────────────────────────────────');
 
   // Roteia conforme estado
   switch (conversation.state) {
     case 'WAITING_SECTOR': {
+      console.log('➡️  Roteando para: handleSectorChoice');
       const result = await handleSectorChoice(conversation, message);
       if (result.reply) {
         await sendWhatsAppMessage({ phone, text: result.reply });
       }
+      console.log('═══════════════════════════════════════════════════');
       return result;
     }
 
     case 'WAITING_AGENT': {
+      console.log('➡️  Roteando para: handleAgentChoice');
       const result = await handleAgentChoice(conversation, message);
       if (result.reply) {
         await sendWhatsAppMessage({ phone, text: result.reply });
       }
+      console.log('═══════════════════════════════════════════════════');
       return result;
     }
 
     case 'WAITING_ATTENDANCE': {
+      console.log('➡️  Roteando para: WAITING_ATTENDANCE (aguardando atendente)');
       const reply = msg.messages.alreadyInAttendance;
       await sendWhatsAppMessage({ phone, text: reply });
+      console.log('═══════════════════════════════════════════════════');
       return { reply };
     }
 
     case 'IN_ATTENDANCE': {
-      // Mensagem do cliente durante atendimento — NÃO responde (atendente humano responde)
-      return handleInAttendance(conversation, message);
+      console.log('➡️  Roteando para: handleInAttendance (atendente ativo)');
+      const result = await handleInAttendance(conversation, message);
+      console.log('═══════════════════════════════════════════════════');
+      return result;
     }
 
+    case 'CLOSED':
     default: {
-      const reply = msg.messages.greeting + '\n\n' + (await buildSectorMenu());
+      // 🔥 FIX: Quando CLOSED ou estado desconhecido, resetar Conversation pra WAITING_SECTOR
+      // Isso permite que o cliente comece um atendimento NOVO
+
+      console.log(
+        `♻️  Estado "${conversation.state}" — resetando para WAITING_SECTOR`
+      );
+
+      // Se veio de um atendimento fechado, cria um ticket NOVO (regra de negócio)
+      // Reseta a Conversation pra começar do zero
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          state: 'WAITING_SECTOR',
+          sectorId: null,
+          ticketId: null,
+          context: null,
+        },
+      });
+
+      console.log('♻️  Conversation resetada. Mostrando menu de setores.');
+
+      const reply = await buildSectorMenu();
       await sendWhatsAppMessage({ phone, text: reply });
+      console.log('═══════════════════════════════════════════════════');
       return { reply };
     }
   }
@@ -91,14 +151,22 @@ async function handleSectorChoice(
     orderBy: { name: 'asc' },
   });
 
+  console.log(`📋 Setores disponíveis (${sectors.length}):`);
+  sectors.forEach((s, i) => {
+    console.log(`   ${i + 1}️⃣ ${s.name} (${s.slug})`);
+  });
+
   const index = parseInt(message) - 1;
   const chosenSector = sectors[index];
 
   if (!chosenSector) {
+    console.log(`❌ Opção inválida: "${message}" (index ${index})`);
     return {
       reply: msg.messages.invalidOption + '\n\n' + (await buildSectorMenu()),
     };
   }
+
+  console.log(`✅ Setor escolhido: ${chosenSector.name}`);
 
   const agents = await prisma.user.findMany({
     where: {
@@ -107,6 +175,11 @@ async function handleSectorChoice(
       sectorId: chosenSector.id,
     },
     orderBy: { name: 'asc' },
+  });
+
+  console.log(`👥 Atendentes do setor (${agents.length}):`);
+  agents.forEach((a, i) => {
+    console.log(`   ${i + 1}️⃣ ${a.name}`);
   });
 
   await prisma.conversation.update({
@@ -131,6 +204,7 @@ async function handleAgentChoice(
 ): Promise<BotReply> {
   // Opção 0 → volta ao menu de setores
   if (message === '0') {
+    console.log('↩️  Voltando ao menu de setores');
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: { state: 'WAITING_SECTOR', sectorId: null },
@@ -142,6 +216,7 @@ async function handleAgentChoice(
   }
 
   if (!conversation.sectorId) {
+    console.log('⚠️  Sem sectorId — resetando para WAITING_SECTOR');
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: { state: 'WAITING_SECTOR' },
@@ -154,6 +229,7 @@ async function handleAgentChoice(
   });
 
   if (!sector) {
+    console.log('⚠️  Setor não encontrado — resetando');
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: { state: 'WAITING_SECTOR', sectorId: null },
@@ -170,12 +246,23 @@ async function handleAgentChoice(
     orderBy: { name: 'asc' },
   });
 
+  console.log(`👥 Atendentes de ${sector.name} (${agents.length}):`);
+  agents.forEach((a, i) => {
+    console.log(`   ${i + 1}️⃣ ${a.name}`);
+  });
+  console.log(`   ${agents.length + 1}️⃣ Qualquer um`);
+
   const index = parseInt(message) - 1;
   const isQualquerUm = index === agents.length;
   const chosenAgent = isQualquerUm ? null : agents[index];
 
+  console.log(
+    `🔍 Escolha: index=${index}, qualquerUm=${isQualquerUm}, agent=${chosenAgent?.name ?? 'nenhum'}`
+  );
+
   // Opção inválida
   if (!isQualquerUm && (!chosenAgent || chosenAgent === undefined)) {
+    console.log(`❌ Opção inválida: "${message}"`);
     return {
       reply:
         msg.messages.invalidOption + '\n\n' + msg.menuAgents(sector, agents),
@@ -185,6 +272,7 @@ async function handleAgentChoice(
   // ==========================
   // CRIA O TICKET
   // ==========================
+  console.log('🎫 Criando ticket...');
   const client = await ensureClientUser(conversation.phone);
 
   const now = new Date();
@@ -212,6 +300,8 @@ async function handleAgentChoice(
     },
   });
 
+  console.log(`✅ Ticket criado: ${ticket.id}`);
+
   await prisma.conversation.update({
     where: { id: conversation.id },
     data: {
@@ -220,7 +310,7 @@ async function handleAgentChoice(
     },
   });
 
-  // 🔔 Notifica o setor (tempo real no painel)
+  // 🔔 Notifica o setor
   emitToSector(ticket.sectorId, 'ticket:new', ticket);
 
   // 🔔 Notifica o atendente específico (se pedido)
@@ -246,6 +336,7 @@ async function handleInAttendance(
   message: string
 ): Promise<BotReply> {
   if (!conversation.ticketId) {
+    console.log('⚠️  IN_ATTENDANCE sem ticketId — resetando');
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: { state: 'WAITING_SECTOR' },
@@ -259,6 +350,7 @@ async function handleInAttendance(
   });
 
   if (!ticket) {
+    console.log('⚠️  Ticket não encontrado — resetando');
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: { state: 'WAITING_SECTOR', ticketId: null, sectorId: null },
@@ -266,7 +358,8 @@ async function handleInAttendance(
     return { reply: await buildSectorMenu() };
   }
 
-  // Salva mensagem no ticket
+  console.log(`💾 Salvando mensagem no ticket ${ticket.id}`);
+
   const newMessage = await prisma.message.create({
     data: {
       content: message,
@@ -281,14 +374,17 @@ async function handleInAttendance(
     },
   });
 
-  // 🔔 Emite pra sala do ticket (atendente vê em tempo real)
+  console.log(`✅ Mensagem salva (id: ${newMessage.id})`);
+
+  // 🔔 Emite pra sala do ticket
   emitToTicket(ticket.id, 'message:new', newMessage);
 
-  // Atendente já assumiu? Se sim, não responde (atendente humano responde)
   if (ticket.agentId) {
+    console.log('👤 Atendente ativo — não responde (deixa pro humano)');
     return { reply: '' };
   }
 
+  console.log('⏳ Aguardando atendente assumir');
   return {
     reply: msg.messages.alreadyInAttendance,
   };
@@ -312,6 +408,7 @@ async function ensureClientUser(phone: string) {
         role: 'CLIENT',
       },
     });
+    console.log(`👤 Cliente criado: ${user.name} (${user.phone})`);
   }
 
   return user;
