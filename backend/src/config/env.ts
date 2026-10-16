@@ -8,6 +8,9 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(16, 'JWT_SECRET precisa ter no mínimo 16 caracteres'),
   JWT_EXPIRES_IN: z.string().default('7d'),
 
+  // Base URL do backend (pra montar URLs de upload)
+  BASE_URL: z.string().default('http://localhost:3000'),
+
   // Evolution API
   EVOLUTION_API_URL: z.string().url().default('http://localhost:8080'),
   EVOLUTION_API_KEY: z.string(),

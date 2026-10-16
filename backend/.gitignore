@@ -1,0 +1,15 @@
+# Uploads (arquivos dos clientes)
+uploads/
+
+# Node
+node_modules/
+
+# Prisma
+prisma/dev.db
+prisma/dev.db-journal
+
+# Ambiente
+.env
+
+# Build
+dist/

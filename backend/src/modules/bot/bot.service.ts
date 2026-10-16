@@ -25,7 +25,6 @@ export async function processMessage(input: BotInput): Promise<BotReply> {
   console.log(`🤖 BOT [${phone}]`);
   console.log(`📩 Recebido: "${message}"`);
 
-  // Busca ou cria Conversation
   let conversation = await prisma.conversation.findUnique({
     where: { phone },
     include: {
@@ -33,16 +32,12 @@ export async function processMessage(input: BotInput): Promise<BotReply> {
     },
   });
 
-  // Primeira vez → cria e mostra setores
   if (!conversation) {
     console.log('🆕 Primeira vez — criando Conversation em WAITING_SECTOR');
     console.log('───────────────────────────────────────────────────');
 
     conversation = await prisma.conversation.create({
-      data: {
-        phone,
-        state: 'WAITING_SECTOR',
-      },
+      data: { phone, state: 'WAITING_SECTOR' },
       include: {
         sector: { select: { id: true, name: true, slug: true } },
       },
@@ -57,7 +52,6 @@ export async function processMessage(input: BotInput): Promise<BotReply> {
     return { reply };
   }
 
-  // Loga estado atual
   console.log(`📍 Estado atual: ${conversation.state}`);
   if (conversation.sector) {
     console.log(`🏢 Setor: ${conversation.sector.name} (${conversation.sector.slug})`);
@@ -71,7 +65,6 @@ export async function processMessage(input: BotInput): Promise<BotReply> {
   }
   console.log('───────────────────────────────────────────────────');
 
-  // Roteia conforme estado
   switch (conversation.state) {
     case 'WAITING_SECTOR': {
       console.log('➡️  Roteando para: handleSectorChoice');
@@ -110,15 +103,8 @@ export async function processMessage(input: BotInput): Promise<BotReply> {
 
     case 'CLOSED':
     default: {
-      // 🔥 FIX: Quando CLOSED ou estado desconhecido, resetar Conversation pra WAITING_SECTOR
-      // Isso permite que o cliente comece um atendimento NOVO
+      console.log(`♻️  Estado "${conversation.state}" — resetando para WAITING_SECTOR`);
 
-      console.log(
-        `♻️  Estado "${conversation.state}" — resetando para WAITING_SECTOR`
-      );
-
-      // Se veio de um atendimento fechado, cria um ticket NOVO (regra de negócio)
-      // Reseta a Conversation pra começar do zero
       await prisma.conversation.update({
         where: { id: conversation.id },
         data: {
@@ -142,10 +128,7 @@ export async function processMessage(input: BotInput): Promise<BotReply> {
 // ==========================
 // HANDLER: ESCOLHA DE SETOR
 // ==========================
-async function handleSectorChoice(
-  conversation: any,
-  message: string
-): Promise<BotReply> {
+async function handleSectorChoice(conversation: any, message: string): Promise<BotReply> {
   const sectors = await prisma.sector.findMany({
     where: { active: true },
     orderBy: { name: 'asc' },
@@ -169,11 +152,7 @@ async function handleSectorChoice(
   console.log(`✅ Setor escolhido: ${chosenSector.name}`);
 
   const agents = await prisma.user.findMany({
-    where: {
-      role: 'AGENT',
-      active: true,
-      sectorId: chosenSector.id,
-    },
+    where: { role: 'AGENT', active: true, sectorId: chosenSector.id },
     orderBy: { name: 'asc' },
   });
 
@@ -184,32 +163,22 @@ async function handleSectorChoice(
 
   await prisma.conversation.update({
     where: { id: conversation.id },
-    data: {
-      state: 'WAITING_AGENT',
-      sectorId: chosenSector.id,
-    },
+    data: { state: 'WAITING_AGENT', sectorId: chosenSector.id },
   });
 
-  return {
-    reply: msg.menuAgents(chosenSector, agents),
-  };
+  return { reply: msg.menuAgents(chosenSector, agents) };
 }
 
 // ==========================
 // HANDLER: ESCOLHA DE ATENDENTE
 // ==========================
-async function handleAgentChoice(
-  conversation: any,
-  message: string
-): Promise<BotReply> {
-  // Opção 0 → volta ao menu de setores
+async function handleAgentChoice(conversation: any, message: string): Promise<BotReply> {
   if (message === '0') {
     console.log('↩️  Voltando ao menu de setores');
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: { state: 'WAITING_SECTOR', sectorId: null },
     });
-
     return {
       reply: msg.messages.backToMenu + '\n\n' + (await buildSectorMenu()),
     };
@@ -238,11 +207,7 @@ async function handleAgentChoice(
   }
 
   const agents = await prisma.user.findMany({
-    where: {
-      role: 'AGENT',
-      active: true,
-      sectorId: sector.id,
-    },
+    where: { role: 'AGENT', active: true, sectorId: sector.id },
     orderBy: { name: 'asc' },
   });
 
@@ -260,12 +225,10 @@ async function handleAgentChoice(
     `🔍 Escolha: index=${index}, qualquerUm=${isQualquerUm}, agent=${chosenAgent?.name ?? 'nenhum'}`
   );
 
-  // Opção inválida
   if (!isQualquerUm && (!chosenAgent || chosenAgent === undefined)) {
     console.log(`❌ Opção inválida: "${message}"`);
     return {
-      reply:
-        msg.messages.invalidOption + '\n\n' + msg.menuAgents(sector, agents),
+      reply: msg.messages.invalidOption + '\n\n' + msg.menuAgents(sector, agents),
     };
   }
 
@@ -304,16 +267,10 @@ async function handleAgentChoice(
 
   await prisma.conversation.update({
     where: { id: conversation.id },
-    data: {
-      state: 'WAITING_ATTENDANCE',
-      ticketId: ticket.id,
-    },
+    data: { state: 'WAITING_ATTENDANCE', ticketId: ticket.id },
   });
 
-  // 🔔 Notifica o setor
   emitToSector(ticket.sectorId, 'ticket:new', ticket);
-
-  // 🔔 Notifica o atendente específico (se pedido)
   if (ticket.requestedAgentId) {
     emitToUser(ticket.requestedAgentId, 'ticket:new', ticket);
   }
@@ -331,10 +288,7 @@ async function handleAgentChoice(
 // ==========================
 // HANDLER: EM ATENDIMENTO
 // ==========================
-async function handleInAttendance(
-  conversation: any,
-  message: string
-): Promise<BotReply> {
+async function handleInAttendance(conversation: any, message: string): Promise<BotReply> {
   if (!conversation.ticketId) {
     console.log('⚠️  IN_ATTENDANCE sem ticketId — resetando');
     await prisma.conversation.update({
@@ -360,12 +314,12 @@ async function handleInAttendance(
 
   console.log(`💾 Salvando mensagem no ticket ${ticket.id}`);
 
+  // 🔥 SEM 'channel' — foi removido do schema Message
   const newMessage = await prisma.message.create({
     data: {
       content: message,
       ticketId: ticket.id,
       senderId: ticket.clientId,
-      channel: 'WHATSAPP',
     },
     include: {
       sender: {
@@ -376,7 +330,6 @@ async function handleInAttendance(
 
   console.log(`✅ Mensagem salva (id: ${newMessage.id})`);
 
-  // 🔔 Emite pra sala do ticket
   emitToTicket(ticket.id, 'message:new', newMessage);
 
   if (ticket.agentId) {
@@ -385,9 +338,7 @@ async function handleInAttendance(
   }
 
   console.log('⏳ Aguardando atendente assumir');
-  return {
-    reply: msg.messages.alreadyInAttendance,
-  };
+  return { reply: msg.messages.alreadyInAttendance };
 }
 
 // ==========================

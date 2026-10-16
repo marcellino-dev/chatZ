@@ -1,7 +1,11 @@
 import { prisma } from '../../config/prisma';
 import { AppError } from '../../middlewares/errorHandler';
 import { emitToTicket, emitToSector } from '../../sockets/socket.server';
-import { sendWhatsAppMessage } from '../whatsapp/whatsapp.service';
+import {
+  sendWhatsAppMessage,
+  sendWhatsAppMedia,
+} from '../whatsapp/whatsapp.service';
+import { env } from '../../config/env';
 import { SendMessageInput } from './message.schemas';
 
 interface AuthUser {
@@ -10,14 +14,8 @@ interface AuthUser {
   sectorId?: string | null;
 }
 
-// ==========================
-// LISTAR MENSAGENS
-// ==========================
 export async function listMessages(user: AuthUser, ticketId: string) {
-  const ticket = await prisma.ticket.findUnique({
-    where: { id: ticketId },
-  });
-
+  const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
   if (!ticket) throw new AppError('Ticket não encontrado', 404);
 
   if (user.role === 'CLIENT' && ticket.clientId !== user.id) {
@@ -36,9 +34,7 @@ export async function listMessages(user: AuthUser, ticketId: string) {
     where: { ticketId },
     orderBy: { createdAt: 'asc' },
     include: {
-      sender: {
-        select: { id: true, name: true, role: true },
-      },
+      sender: { select: { id: true, name: true, role: true } },
     },
   });
 
@@ -56,9 +52,6 @@ export async function listMessages(user: AuthUser, ticketId: string) {
   return messages;
 }
 
-// ==========================
-// ENVIAR MENSAGEM
-// ==========================
 export async function sendMessage(
   user: AuthUser,
   ticketId: string,
@@ -85,34 +78,48 @@ export async function sendMessage(
     );
   }
 
+  // 🔥 Cria message — só passa attachment se existir
   const message = await prisma.message.create({
     data: {
-      content: data.content,
+      content: data.content ?? '',
       ticketId,
       senderId: user.id,
-      channel: ticket.channel,
+      ...(data.attachment && { attachment: data.attachment as any }),
     },
     include: {
-      sender: {
-        select: { id: true, name: true, role: true },
-      },
+      sender: { select: { id: true, name: true, role: true } },
     },
   });
 
-  // 🔔 Emite via Socket.IO
   emitToTicket(ticketId, 'message:new', message);
   emitToSector(ticket.sectorId, 'ticket:updated', ticket);
 
-  // 📱 Envia pro WhatsApp (se for do atendente pro cliente)
+  // 📱 WhatsApp
   if (user.role !== 'CLIENT' && ticket.client.phone) {
     try {
-      await sendWhatsAppMessage({
-        phone: ticket.client.phone,
-        text: data.content,
-      });
+      const baseUrl = env.BASE_URL.replace(/\/$/, '');
+      const phone = ticket.client.phone;
+
+      if (data.attachment) {
+        const fullUrl = `${baseUrl}${data.attachment.url}`;
+        console.log(`📎 Enviando mídia: ${data.attachment.originalName}`);
+        console.log(`   🔗 URL: ${fullUrl}`);
+
+        await sendWhatsAppMedia({
+          phone,
+          url: fullUrl,
+          mimetype: data.attachment.mimetype,
+          filename: data.attachment.originalName,
+          caption: data.content?.trim() || undefined,
+        });
+      } else if (data.content?.trim()) {
+        await sendWhatsAppMessage({
+          phone,
+          text: data.content,
+        });
+      }
     } catch (err) {
-      console.error('⚠️ Erro ao enviar WhatsApp (mensagem salva no banco):', err);
-      // Não estoura erro — a mensagem tá no banco, só o envio falhou
+      console.error('⚠️ Erro ao enviar pro WhatsApp:', err);
     }
   }
 

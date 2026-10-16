@@ -11,7 +11,11 @@ let io: Server | null = null;
 export function initSocketServer(httpServer: HttpServer) {
   io = new Server(httpServer, {
     cors: {
-      origin: 'http://localhost:5173', // frontend
+      origin: [
+        'http://localhost:5173',
+        'https://chat-z-two.vercel.app',
+        /\.vercel\.app$/,
+      ],
       credentials: true,
     },
   });
@@ -29,7 +33,6 @@ export function initSocketServer(httpServer: HttpServer) {
 
       const payload = verifyToken(token);
 
-      // Busca user no banco (pra ter sectorId atualizado)
       const user = await prisma.user.findUnique({
         where: { id: payload.sub },
         select: { id: true, name: true, role: true, sectorId: true, active: true },
@@ -39,9 +42,7 @@ export function initSocketServer(httpServer: HttpServer) {
         return next(new Error('Usuário inativo ou não encontrado'));
       }
 
-      // Guarda o user no socket
       socket.data.user = user;
-
       next();
     } catch {
       next(new Error('Token inválido ou expirado'));
@@ -80,16 +81,25 @@ export function initSocketServer(httpServer: HttpServer) {
         });
     }
 
-    // Entrar na sala de um ticket específico (pra chat futuro)
+    // ==========================
+    // ENTRAR NA SALA DE UM TICKET (chat)
+    // ==========================
     socket.on('ticket:join', (ticketId: string) => {
       socket.join(`ticket:${ticketId}`);
+      console.log(`   └─ ${user.name} entrou na sala ticket:${ticketId}`);
+
+      // Confirma pro cliente que entrou
+      socket.emit('ticket:joined', { ticketId });
     });
 
     socket.on('ticket:leave', (ticketId: string) => {
       socket.leave(`ticket:${ticketId}`);
+      console.log(`   └─ ${user.name} saiu da sala ticket:${ticketId}`);
     });
 
-    // Desconexão
+    // ==========================
+    // DESCONEXÃO
+    // ==========================
     socket.on('disconnect', () => {
       console.log(`🔌 Desconectado: ${user.name}`);
     });
@@ -113,16 +123,29 @@ export function getIO(): Server {
 export function emitToSector(sectorId: string, event: string, data: any) {
   if (!io) return;
   io.to(`sector:${sectorId}`).emit(event, data);
+  console.log(`📡 emitToSector → sector:${sectorId} → ${event}`);
 }
 
 // Emitir pra um usuário específico
 export function emitToUser(userId: string, event: string, data: any) {
   if (!io) return;
   io.to(`user:${userId}`).emit(event, data);
+  console.log(`📡 emitToUser → user:${userId} → ${event}`);
 }
 
 // Emitir pra um ticket (chat)
 export function emitToTicket(ticketId: string, event: string, data: any) {
-  if (!io) return;
-  io.to(`ticket:${ticketId}`).emit(event, data);
+  if (!io) {
+    console.warn('⚠️ Socket.IO não inicializado — emit ignorado');
+    return;
+  }
+
+  const room = `ticket:${ticketId}`;
+  const socketsInRoom = io.sockets.adapter.rooms.get(room);
+
+  console.log(
+    `📡 emitToTicket → ${room} → ${event} (${socketsInRoom?.size ?? 0} clientes na sala)`
+  );
+
+  io.to(room).emit(event, data);
 }
