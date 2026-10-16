@@ -22,7 +22,7 @@ export function Login() {
 
     try {
       await login({ email, password });
-      navigate('/dashboard', { replace: true });
+     navigate('/chat', { replace: true });
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {

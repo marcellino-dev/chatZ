@@ -1,13 +1,10 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Login } from './pages/Login';
-import { Dashboard } from './pages/Dashboard';
-import { Tickets } from './pages/Tickets';
-import { TicketDetail } from './pages/TicketDetail';
+import { Chat } from './pages/Chat';
 import { Sectors } from './pages/Sectors';
 import { Users } from './pages/Users';
 import { ProtectedRoute } from './components/ProtectedRoute';
-import { Layout } from './components/Layout';
 import { useAuthStore } from './stores/auth';
 
 export default function App() {
@@ -23,26 +20,26 @@ export default function App() {
       <Routes>
         <Route
           path="/login"
-          element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />}
+          element={isAuthenticated ? <Navigate to="/chat" replace /> : <Login />}
         />
 
         <Route element={<ProtectedRoute />}>
-          <Route element={<Layout />}>
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/tickets" element={<Tickets />} />
-            <Route path="/tickets/:id" element={<TicketDetail />} />
-            <Route path="/sectors" element={<Sectors />} />
-            <Route path="/users" element={<Users />} />
-          </Route>
+          {/* Chat (tela cheia, sem Layout) */}
+          <Route path="/chat" element={<Chat />} />
+          <Route path="/chat/:id" element={<Chat />} />
+
+          {/* Admin pages com layout simples */}
+          <Route path="/sectors" element={<Sectors />} />
+          <Route path="/users" element={<Users />} />
         </Route>
 
         <Route
           path="/"
-          element={<Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />}
+          element={<Navigate to={isAuthenticated ? '/chat' : '/login'} replace />}
         />
         <Route
           path="*"
-          element={<Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />}
+          element={<Navigate to={isAuthenticated ? '/chat' : '/login'} replace />}
         />
       </Routes>
     </BrowserRouter>
