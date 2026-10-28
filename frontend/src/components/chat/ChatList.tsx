@@ -1,39 +1,71 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTicketsStore } from '../../stores/tickets';
 import { useAuthStore } from '../../stores/auth';
 import { getSocket } from '../../lib/socket';
+import {
+  getTicketUnread,
+  resetTicketUnread,
+  onUnreadChange,
+} from '../../lib/notifications';
 import type { Ticket } from '../../types';
 
-type Filter = 'all' | 'waiting' | 'active' | 'resolved';
+type Filter = 'active' | 'waiting' | 'all' | 'resolved';
 
 export function ChatList() {
   const navigate = useNavigate();
   const { id: activeId } = useParams<{ id: string }>();
   const user = useAuthStore((s) => s.user);
   const { tickets, loading, fetchTickets } = useTicketsStore();
-  const [filter, setFilter] = useState<Filter>('all');
+  // 🔥 Abre direto em "Em atendimento"
+  const [filter, setFilter] = useState<Filter>('active');
   const [search, setSearch] = useState('');
+  const [unreadMap, setUnreadMap] = useState<Record<string, number>>({});
+  const [reloadTrigger, setReloadTrigger] = useState(0);
+
+  // Atualiza unread
+  useEffect(() => {
+    const update = () => {
+      const map: Record<string, number> = {};
+      tickets.forEach((t) => {
+        const count = getTicketUnread(t.id);
+        if (count > 0) map[t.id] = count;
+      });
+      setUnreadMap(map);
+    };
+
+    update();
+    const unsub = onUnreadChange(update);
+    return unsub;
+  }, [tickets]);
+
+  // Zera unread ao abrir ticket
+  useEffect(() => {
+    if (activeId) {
+      resetTicketUnread(activeId);
+    }
+  }, [activeId]);
 
   // Carrega tickets
   useEffect(() => {
     if (!user) return;
     const params: any = {};
-    if (user.role === 'AGENT') {
-      if (filter === 'active') params.mine = true;
-    }
+    if (user.role === 'AGENT' && filter === 'active') params.mine = true;
     fetchTickets(params);
-  }, [user, filter, fetchTickets]);
+  }, [user, filter, fetchTickets, reloadTrigger]);
 
-  // Socket.IO: novo ticket / atualização
+  // Socket.IO — força reload
   useEffect(() => {
     const socket = getSocket();
     if (!socket || !user) return;
 
     function reload() {
+      console.log('🔄 [ChatList] Reloading tickets...');
       const params: any = {};
       if (user && user.role === 'AGENT' && filter === 'active') params.mine = true;
-      fetchTickets(params);
+      fetchTickets(params).then(() => {
+        setReloadTrigger((r) => r + 1);
+      });
     }
 
     socket.on('ticket:new', reload);
@@ -47,7 +79,17 @@ export function ChatList() {
     };
   }, [user, filter, fetchTickets]);
 
-  // Filtra localmente
+  // Contadores
+  const counts = useMemo(() => {
+    const waiting = tickets.filter((t) => t.status === 'WAITING').length;
+    const active = tickets.filter((t) => t.status === 'IN_PROGRESS').length;
+    const resolved = tickets.filter(
+      (t) => t.status === 'RESOLVED' || t.status === 'CLOSED'
+    ).length;
+
+    return { all: tickets.length, waiting, active, resolved };
+  }, [tickets]);
+
   const filtered = tickets
     .filter((t) => {
       if (filter === 'waiting') return t.status === 'WAITING';
@@ -65,12 +107,24 @@ export function ChatList() {
       );
     });
 
+  const sorted = [...filtered].sort((a, b) => {
+    const unreadA = unreadMap[a.id] || 0;
+    const unreadB = unreadMap[b.id] || 0;
+    if (unreadA !== unreadB) return unreadB - unreadA;
+    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+  });
+
+  // 🔥 ORDEM NOVA: Em atendimento → Aguardando → Todas → Resolvidas
+  const tabs: { key: Filter; label: string; count: number; color: string }[] = [
+    { key: 'active', label: 'Em atendimento', count: counts.active, color: 'bg-chatz-success' },
+    { key: 'waiting', label: 'Aguardando', count: counts.waiting, color: 'bg-chatz-warning' },
+    { key: 'all', label: 'Todas', count: counts.all, color: 'bg-chatz-primary' },
+    { key: 'resolved', label: 'Resolvidas', count: counts.resolved, color: 'bg-chatz-text-subtle' },
+  ];
+
   return (
     <aside className="w-[340px] bg-chatz-surface border-r border-chatz-border flex flex-col shrink-0">
-
-      {/* Header + Filtros */}
       <div className="border-b border-chatz-border p-3">
-        {/* Busca */}
         <div className="relative mb-3">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-chatz-text-subtle">
             <SearchIcon />
@@ -86,32 +140,34 @@ export function ChatList() {
           />
         </div>
 
-        {/* Filtros */}
-        <div className="flex gap-1 text-xs">
-          {(
-            [
-              { key: 'all', label: 'Todas' },
-              { key: 'waiting', label: 'Aguardando' },
-              { key: 'active', label: 'Em atendimento' },
-              { key: 'resolved', label: 'Resolvidas' },
-            ] as { key: Filter; label: string }[]
-          ).map((f) => (
+        <div className="flex flex-wrap gap-1 text-xs">
+          {tabs.map((t) => (
             <button
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              className={`px-2.5 py-1 rounded-full font-medium transition-all ${
-                filter === f.key
-                  ? 'bg-chatz-primary text-white'
+              key={t.key}
+              onClick={() => setFilter(t.key)}
+              className={`px-2.5 py-1 rounded-full font-medium transition-all flex items-center gap-1.5 ${
+                filter === t.key
+                  ? `${t.color} text-white`
                   : 'bg-chatz-surface-alt text-chatz-text-muted hover:text-chatz-text'
               }`}
             >
-              {f.label}
+              <span>{t.label}</span>
+              {t.count > 0 && (
+                <span
+                  className={`min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center ${
+                    filter === t.key
+                      ? 'bg-white/25 text-white'
+                      : `${t.color} text-white`
+                  }`}
+                >
+                  {t.count > 99 ? '99+' : t.count}
+                </span>
+              )}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Lista */}
       <div className="flex-1 overflow-y-auto">
         {loading && (
           <div className="p-6 text-center text-chatz-text-muted text-sm">
@@ -119,23 +175,25 @@ export function ChatList() {
           </div>
         )}
 
-        {!loading && filtered.length === 0 && (
+        {!loading && sorted.length === 0 && (
           <div className="p-6 text-center">
-            <p className="text-chatz-text-muted text-sm mb-1">
-              Nenhuma conversa
-            </p>
+            <p className="text-chatz-text-muted text-sm mb-1">Nenhuma conversa</p>
             <p className="text-chatz-text-subtle text-xs">
-              Os atendimentos aparecem aqui automaticamente
+              {filter === 'active' && 'Nenhum atendimento em andamento'}
+              {filter === 'waiting' && 'Nenhum atendimento aguardando'}
+              {filter === 'resolved' && 'Nenhum atendimento resolvido'}
+              {filter === 'all' && 'Os atendimentos aparecem aqui automaticamente'}
             </p>
           </div>
         )}
 
         {!loading &&
-          filtered.map((ticket) => (
+          sorted.map((ticket) => (
             <ChatListItem
               key={ticket.id}
               ticket={ticket}
               active={ticket.id === activeId}
+              unread={unreadMap[ticket.id] || 0}
               onClick={() => navigate(`/chat/${ticket.id}`)}
             />
           ))}
@@ -144,16 +202,15 @@ export function ChatList() {
   );
 }
 
-// ==========================
-// ITEM DA LISTA
-// ==========================
 function ChatListItem({
   ticket,
   active,
+  unread,
   onClick,
 }: {
   ticket: Ticket;
   active: boolean;
+  unread: number;
   onClick: () => void;
 }) {
   const lastMessage = ticket._count?.messages
@@ -167,7 +224,7 @@ function ChatListItem({
     .join('')
     .toUpperCase();
 
-  const time = new Date(ticket.createdAt).toLocaleTimeString('pt-BR', {
+  const time = new Date(ticket.updatedAt).toLocaleTimeString('pt-BR', {
     hour: '2-digit',
     minute: '2-digit',
   });
@@ -176,21 +233,19 @@ function ChatListItem({
     <button
       onClick={onClick}
       className={`w-full text-left px-3 py-3 border-b border-chatz-border
-                  transition-all flex gap-3 items-start ${
+                  transition-all flex gap-3 items-start relative ${
                     active
                       ? 'bg-chatz-primary-light border-l-4 border-l-chatz-primary'
+                      : unread > 0
+                      ? 'bg-chatz-primary-light/30 hover:bg-chatz-surface-alt'
                       : 'hover:bg-chatz-surface-alt'
                   }`}
     >
-      {/* Avatar */}
       <div className="relative shrink-0">
-        <div
-          className="w-11 h-11 rounded-full bg-gradient-to-br from-chatz-purple to-chatz-pink
-                     flex items-center justify-center text-white font-semibold text-sm"
-        >
+        <div className="w-11 h-11 rounded-full bg-gradient-to-br from-chatz-purple to-chatz-pink
+                        flex items-center justify-center text-white font-semibold text-sm">
           {initials}
         </div>
-        {/* Indicador de status */}
         {ticket.status === 'WAITING' && (
           <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-chatz-warning border-2 border-chatz-surface" />
         )}
@@ -199,28 +254,35 @@ function ChatListItem({
         )}
       </div>
 
-      {/* Conteúdo */}
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline justify-between gap-2 mb-0.5">
-          <p className="text-sm font-semibold text-chatz-text truncate">
+          <p className={`text-sm truncate ${unread > 0 ? 'font-bold text-chatz-text' : 'font-semibold text-chatz-text'}`}>
             {ticket.client.name}
           </p>
-          <span className="text-[10px] text-chatz-text-subtle shrink-0">
+          <span className={`text-[10px] shrink-0 ${unread > 0 ? 'text-chatz-primary font-bold' : 'text-chatz-text-subtle'}`}>
             {time}
           </span>
         </div>
-        <p className="text-xs text-chatz-text-muted truncate mb-1">
+        <p className={`text-xs truncate mb-1 ${unread > 0 ? 'text-chatz-text font-medium' : 'text-chatz-text-muted'}`}>
           {ticket.subject}
         </p>
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] text-chatz-text-subtle">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[10px] text-chatz-text-subtle truncate">
             {lastMessage}
           </span>
-          {ticket.priority === 'URGENT' && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-chatz-danger-light text-chatz-danger font-medium">
-              Urgente
-            </span>
-          )}
+          <div className="flex items-center gap-1 shrink-0">
+            {ticket.priority === 'URGENT' && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-chatz-danger-light text-chatz-danger font-medium">
+                Urgente
+              </span>
+            )}
+            {unread > 0 && (
+              <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-chatz-success text-white
+                               text-[11px] font-bold flex items-center justify-center">
+                {unread > 99 ? '99+' : unread}
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </button>

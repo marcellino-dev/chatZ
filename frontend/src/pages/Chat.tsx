@@ -4,27 +4,30 @@ import { IconBar } from '../components/chat/IconBar';
 import { ChatList } from '../components/chat/ChatList';
 import { ChatWindow } from '../components/chat/ChatWindow';
 import { ChatInfo } from '../components/chat/ChatInfo';
+import { NotificationPermissionBanner } from '../components/NotificationPermissionBanner';
+import { NotificationPermissionModal } from '../components/NotificationPermissionModal';
 
 export function Chat() {
   const { id } = useParams<{ id: string }>();
   const [infoOpen, setInfoOpen] = useState(false);
 
   return (
-    <div className="h-screen w-screen flex bg-chatz-bg overflow-hidden">
-      {/* Coluna 1 — Icon bar */}
-      <IconBar />
+    <div className="h-screen w-screen flex flex-col bg-chatz-bg overflow-hidden">
+      {/* 🔥 Modal de primeiro acesso */}
+      <NotificationPermissionModal />
 
-      {/* Coluna 2 — Lista de conversas */}
-      <ChatList />
+      {/* Banner (caso tenha negado) */}
+      <NotificationPermissionBanner />
 
-      {/* Coluna 3 — Conversa ativa */}
-      <ChatWindow
-        onToggleInfo={() => setInfoOpen((v) => !v)}
-        infoOpen={infoOpen}
-      />
-
-      {/* Coluna 4 — Info (só quando aberta e tem ticket) */}
-      {infoOpen && id && <ChatInfo onClose={() => setInfoOpen(false)} />}
+      <div className="flex-1 flex overflow-hidden">
+        <IconBar />
+        <ChatList />
+        <ChatWindow
+          onToggleInfo={() => setInfoOpen((v) => !v)}
+          infoOpen={infoOpen}
+        />
+        {infoOpen && id && <ChatInfo onClose={() => setInfoOpen(false)} />}
+      </div>
     </div>
   );
 }

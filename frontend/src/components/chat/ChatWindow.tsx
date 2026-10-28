@@ -7,8 +7,6 @@ import { api, getErrorMessage } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
 import { AttachmentPreview, type Attachment } from './AttachmentPreview';
 import { SimpleEmojiPicker } from './EmojiPicker';
-import { playDing } from '../../lib/sounds';
-import { incrementUnread } from '../../lib/notifications';
 import type { Ticket, Message } from '../../types';
 
 interface Props {
@@ -76,7 +74,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     return () => clear();
   }, [id, fetchMessages, clear]);
 
-  // Socket.IO
+  // Socket.IO — só mensagens, sem notificação (notificação é global)
   useEffect(() => {
     if (!id) return;
     const socket = getSocket();
@@ -91,11 +89,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     function handleNew(msg: Message) {
       if (msg.ticketId !== id) return;
       addMessage(msg);
-      const isMine = msg.senderId === user?.id;
-      if (!isMine) {
-        playDing();
-        incrementUnread();
-      }
+      // 🔕 Notificação é gerenciada pelo GlobalNotifications
     }
 
     function handleUpdated(updated: Ticket) {
@@ -152,7 +146,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     if (id) inputRef.current?.focus();
   }, [id]);
 
-  // Fecha emoji picker ao clicar fora
+  // Fecha emoji picker
   useEffect(() => {
     if (!emojiOpen) return;
 
@@ -574,7 +568,6 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
             )}
 
             <form onSubmit={handleSend} className="p-3 flex items-center gap-2 relative">
-              {/* Emoji picker */}
               {emojiOpen && (
                 <div
                   ref={emojiPickerRef}

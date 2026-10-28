@@ -6,11 +6,9 @@ let audioContext: AudioContext | null = null;
 
 function getAudioContext(): AudioContext {
   if (!audioContext) {
-    const Ctx =
-      window.AudioContext || (window as any).webkitAudioContext;
+    const Ctx = window.AudioContext || (window as any).webkitAudioContext;
     audioContext = new Ctx();
   }
-  // Retoma se estiver suspenso (política do navegador)
   if (audioContext.state === 'suspended') {
     audioContext.resume();
   }
@@ -18,14 +16,13 @@ function getAudioContext(): AudioContext {
 }
 
 // ==========================
-// DING (notificação de mensagem)
+// DING — mensagem recebida (2 notas: A5 → E6)
 // ==========================
 export function playDing() {
   try {
     const ctx = getAudioContext();
     const now = ctx.currentTime;
 
-    // Duas notas: A5 (880Hz) → E6 (1318Hz)
     playTone(ctx, 880, now, 0.1, 0.15);
     playTone(ctx, 1318, now + 0.1, 0.15, 0.2);
   } catch (err) {
@@ -34,24 +31,23 @@ export function playDing() {
 }
 
 // ==========================
-// NOTIFICATION (ticket novo)
+// NOTIFICATION — ticket novo na fila (3 notas: C5 → E5 → G5)
 // ==========================
 export function playNotification() {
   try {
     const ctx = getAudioContext();
     const now = ctx.currentTime;
 
-    // Três notas ascendentes
-    playTone(ctx, 523, now, 0.1, 0.15);        // C5
-    playTone(ctx, 659, now + 0.1, 0.1, 0.15);  // E5
-    playTone(ctx, 784, now + 0.2, 0.15, 0.3);  // G5
+    playTone(ctx, 523, now, 0.1, 0.15);       // C5
+    playTone(ctx, 659, now + 0.1, 0.1, 0.15); // E5
+    playTone(ctx, 784, now + 0.2, 0.15, 0.3); // G5
   } catch (err) {
     console.warn('Erro ao tocar som:', err);
   }
 }
 
 // ==========================
-// SEND (mensagem enviada)
+// SEND — mensagem enviada (curto)
 // ==========================
 export function playSend() {
   try {
@@ -65,7 +61,7 @@ export function playSend() {
 }
 
 // ==========================
-// HELPER
+// HELPER — toca um tom
 // ==========================
 function playTone(
   ctx: AudioContext,
