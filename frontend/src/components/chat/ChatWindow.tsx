@@ -13,7 +13,8 @@ interface Props {
   infoOpen: boolean;
 }
 
-interface PendingAttachment {
+interface PendingFile {
+  id: string;
   file: File;
   preview: Attachment | null;
   uploading: boolean;
@@ -32,7 +33,12 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [assigning, setAssigning] = useState(false);
-  const [pending, setPending] = useState<PendingAttachment | null>(null);
+
+  // Múltiplos arquivos
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+
+  // Drag & drop
+  const [dragging, setDragging] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -58,9 +64,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     return () => clear();
   }, [id, fetchMessages, clear]);
 
-  // ==========================
-  // SOCKET.IO — TEMPO REAL
-  // ==========================
+  // Socket.IO
   useEffect(() => {
     if (!id) return;
     const socket = getSocket();
@@ -68,28 +72,17 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
 
     function join() {
       socket.emit('ticket:join', id);
-      console.log(`🔌 Entrou na sala ticket:${id}`);
     }
 
-    // Se já tá conectado, entra agora
-    if (socket.connected) {
-      join();
-    }
-
-    // Se reconectar, entra de novo
+    if (socket.connected) join();
     socket.on('connect', join);
 
     function handleNew(msg: Message) {
-      console.log('🔔 message:new recebida:', msg);
-      if (msg.ticketId === id) {
-        addMessage(msg);
-      }
+      if (msg.ticketId === id) addMessage(msg);
     }
-
     function handleUpdated(updated: Ticket) {
-      if (updated.id === id) {
+      if (updated.id === id)
         setTicket((prev) => (prev ? { ...prev, ...updated } : updated));
-      }
     }
 
     socket.on('message:new', handleNew);
@@ -105,89 +98,150 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, pending]);
+  }, [messages, pendingFiles]);
 
   useEffect(() => {
     if (id) inputRef.current?.focus();
   }, [id]);
 
   // ==========================
-  // ESCOLHER ARQUIVO
+  // ADICIONAR ARQUIVOS (upload imediato em background)
   // ==========================
-  function handleAttachClick() {
-    fileInputRef.current?.click();
+  function addFiles(files: File[]) {
+    const validFiles = files.filter((f) => f.size > 0);
+    if (validFiles.length === 0) return;
+
+    // Cria pendentes
+    const newPending: PendingFile[] = validFiles.map((file) => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      file,
+      preview: null,
+      uploading: true,
+    }));
+
+    setPendingFiles((prev) => [...prev, ...newPending]);
+
+    // Faz upload em paralelo
+    newPending.forEach((pending) => {
+      const formData = new FormData();
+      formData.append('file', pending.file);
+
+      api
+        .post<Attachment>('/uploads', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+        .then(({ data }) => {
+          setPendingFiles((prev) =>
+            prev.map((p) =>
+              p.id === pending.id ? { ...p, preview: data, uploading: false } : p
+            )
+          );
+        })
+        .catch((err) => {
+          setPendingFiles((prev) =>
+            prev.map((p) =>
+              p.id === pending.id
+                ? { ...p, uploading: false, error: getErrorMessage(err) }
+                : p
+            )
+          );
+        });
+    });
   }
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setPending({ file, preview: null, uploading: true });
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    api
-      .post<Attachment>('/uploads', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
-      .then(({ data }) => {
-        setPending((prev) =>
-          prev && prev.file === file
-            ? { ...prev, preview: data, uploading: false }
-            : prev
-        );
-      })
-      .catch((err) => {
-        setPending((prev) =>
-          prev && prev.file === file
-            ? { ...prev, uploading: false, error: getErrorMessage(err) }
-            : prev
-        );
-      });
-
+  function handleFileInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) addFiles(files);
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
-  function cancelPending() {
-    setPending(null);
+  function removePendingFile(id: string) {
+    setPendingFiles((prev) => prev.filter((p) => p.id !== id));
+  }
+
+  function clearAllPending() {
+    setPendingFiles([]);
   }
 
   // ==========================
-  // ENVIAR MENSAGEM
+  // DRAG & DROP
+  // ==========================
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!dragging) setDragging(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    // Só remove o dragging se saiu do container inteiro
+    if (e.currentTarget === e.target) {
+      setDragging(false);
+    }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragging(false);
+
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length > 0) addFiles(files);
+  }
+
+  // ==========================
+  // ENVIAR
   // ==========================
   async function handleSend(e: FormEvent) {
     e.preventDefault();
     if (!id) return;
 
-    if (pending?.uploading) {
-      alert('Aguarde o upload terminar...');
+    const hasUploading = pendingFiles.some((p) => p.uploading);
+    if (hasUploading) {
+      alert('Aguarde todos os uploads terminarem...');
       return;
     }
 
-    if (pending?.error) {
-      alert('O anexo falhou. Remova e tente de novo.');
+    const failedFiles = pendingFiles.filter((p) => p.error);
+    if (failedFiles.length > 0) {
+      alert('Remova os arquivos com erro antes de enviar.');
       return;
     }
 
-    if (!input.trim() && !pending) return;
+    const readyFiles = pendingFiles.filter((p) => p.preview);
+    const content = input.trim();
+
+    if (!content && readyFiles.length === 0) return;
 
     setSending(true);
-    const content = input.trim();
-    const attachment = pending?.preview ?? null;
-
     setInput('');
-    setPending(null);
+    setPendingFiles([]);
 
     try {
-      // 🔥 CORREÇÃO: só manda attachment se existir
-      await api.post(`/tickets/${id}/messages`, {
-        content,
-        ...(attachment && { attachment }),
-      });
+      // ==========================
+      // Se tem arquivos, envia cada um como mensagem própria
+      // ==========================
+      if (readyFiles.length > 0) {
+        for (let i = 0; i < readyFiles.length; i++) {
+          const file = readyFiles[i];
+          // Só a primeira mensagem leva o texto como caption
+          const msgContent = i === 0 ? content : '';
+
+          await api.post(`/tickets/${id}/messages`, {
+            content: msgContent,
+            attachment: file.preview,
+          });
+        }
+      } else if (content) {
+        // Só texto
+        await api.post(`/tickets/${id}/messages`, { content });
+      }
     } catch (err) {
       alert(getErrorMessage(err));
       if (content) setInput(content);
+      // Devolve os arquivos pendentes se falhar
+      setPendingFiles(readyFiles);
     } finally {
       setSending(false);
     }
@@ -237,10 +291,28 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     .toUpperCase();
 
   const hasText = input.trim().length > 0;
-  const canSubmit = !sending && !pending?.uploading && (hasText || pending?.preview);
+  const hasFiles = pendingFiles.length > 0;
+  const hasUploading = pendingFiles.some((p) => p.uploading);
+  const canSubmit =
+    !sending && !hasUploading && (hasText || pendingFiles.some((p) => p.preview));
 
   return (
-    <div className="flex-1 flex flex-col bg-chatz-bg min-w-0">
+    <div
+      className="flex-1 flex flex-col bg-chatz-bg min-w-0 relative"
+      onDragOver={canSend ? handleDragOver : undefined}
+      onDragLeave={canSend ? handleDragLeave : undefined}
+      onDrop={canSend ? handleDrop : undefined}
+    >
+      {/* Overlay de drag */}
+      {dragging && canSend && (
+        <div className="absolute inset-0 z-40 bg-chatz-primary/10 border-4 border-dashed border-chatz-primary rounded-lg
+                        flex items-center justify-center pointer-events-none">
+          <div className="bg-chatz-surface px-6 py-4 rounded-xl shadow-lg">
+            <p className="text-chatz-primary font-semibold">Solte os arquivos aqui 🎯</p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="h-16 px-4 bg-chatz-surface border-b border-chatz-border
                          flex items-center justify-between shrink-0 gap-3">
@@ -275,7 +347,6 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
               {assigning ? 'Assumindo...' : '🎧 Assumir'}
             </button>
           )}
-
           <button
             onClick={onToggleInfo}
             title="Info do cliente"
@@ -320,49 +391,68 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       <footer className="border-t border-chatz-border bg-chatz-surface shrink-0">
         {canSend ? (
           <>
-            {pending && (
+            {/* Preview múltiplos arquivos */}
+            {pendingFiles.length > 0 && (
               <div className="px-3 pt-3">
-                <div className="flex items-center gap-3 p-3 bg-chatz-surface-alt rounded-chatz border border-chatz-border">
-                  <div className="w-14 h-14 rounded-chatz bg-chatz-primary-light flex items-center justify-center shrink-0 overflow-hidden">
-                    {pending.preview?.type === 'image' ? (
-                      <img
-                        src={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${pending.preview.url}`}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <FilePendingIcon />
-                    )}
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-chatz-text truncate">
-                      {pending.file.name}
-                    </p>
-                    <p className="text-xs text-chatz-text-muted">
-                      {pending.uploading ? (
-                        <span className="flex items-center gap-1.5">
-                          <span className="inline-block w-3 h-3 border-2 border-chatz-primary border-t-transparent rounded-full animate-spin" />
-                          Enviando...
-                        </span>
-                      ) : pending.error ? (
-                        <span className="text-chatz-danger">{pending.error}</span>
-                      ) : (
-                        `${formatSize(pending.file.size)} · pronto pra enviar`
-                      )}
-                    </p>
-                  </div>
-
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs text-chatz-text-muted font-medium">
+                    {pendingFiles.length} arquivo{pendingFiles.length > 1 ? 's' : ''} anexado{pendingFiles.length > 1 ? 's' : ''}
+                  </p>
                   <button
                     type="button"
-                    onClick={cancelPending}
-                    className="w-8 h-8 rounded-full flex items-center justify-center
-                               text-chatz-text-muted hover:bg-chatz-danger-light hover:text-chatz-danger
-                               transition-all shrink-0"
-                    title="Cancelar anexo"
+                    onClick={clearAllPending}
+                    className="text-xs text-chatz-danger hover:underline"
                   >
-                    <CloseIcon />
+                    Remover todos
                   </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {pendingFiles.map((pending) => (
+                    <div
+                      key={pending.id}
+                      className="relative bg-chatz-surface-alt rounded-chatz border border-chatz-border
+                                 p-2 flex items-center gap-2 max-w-[220px]"
+                    >
+                      <div className="w-10 h-10 rounded bg-chatz-primary-light flex items-center justify-center shrink-0 overflow-hidden">
+                        {pending.preview?.type === 'image' ? (
+                          <img
+                            src={`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${pending.preview.url}`}
+                            alt=""
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <FilePendingIcon />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-chatz-text truncate">
+                          {pending.file.name}
+                        </p>
+                        <p className="text-[10px] text-chatz-text-muted">
+                          {pending.uploading ? (
+                            <span className="flex items-center gap-1">
+                              <span className="inline-block w-2 h-2 border border-chatz-primary border-t-transparent rounded-full animate-spin" />
+                              Enviando...
+                            </span>
+                          ) : pending.error ? (
+                            <span className="text-chatz-danger">Erro</span>
+                          ) : (
+                            formatSize(pending.file.size)
+                          )}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removePendingFile(pending.id)}
+                        className="w-5 h-5 rounded-full flex items-center justify-center
+                                   text-chatz-text-muted hover:bg-chatz-danger-light hover:text-chatz-danger
+                                   transition-all shrink-0"
+                        title="Remover"
+                      >
+                        <CloseSmallIcon />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -371,14 +461,15 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
               <input
                 ref={fileInputRef}
                 type="file"
+                multiple
                 className="hidden"
-                onChange={handleFileChange}
+                onChange={handleFileInputChange}
               />
 
               <button
                 type="button"
-                title="Anexar arquivo"
-                onClick={handleAttachClick}
+                title="Anexar arquivos"
+                onClick={() => fileInputRef.current?.click()}
                 className="w-10 h-10 rounded-chatz flex items-center justify-center
                            text-chatz-text-muted hover:bg-chatz-surface-hover transition-all"
               >
@@ -390,7 +481,11 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder={pending ? 'Adicione uma legenda (opcional)' : 'Digite sua mensagem...'}
+                placeholder={
+                  pendingFiles.length > 0
+                    ? 'Legenda (opcional, vai no primeiro arquivo)'
+                    : 'Digite sua mensagem...'
+                }
                 disabled={sending}
                 className="flex-1 px-4 py-2.5 bg-chatz-surface-alt border border-chatz-border rounded-full
                            text-sm text-chatz-text placeholder:text-chatz-text-subtle
@@ -501,7 +596,6 @@ function EmptyState() {
       </h2>
       <p className="text-sm text-chatz-text-muted max-w-sm">
         Selecione uma conversa à esquerda para começar a atender.
-        Ou aguarde novos atendimentos chegarem em tempo real.
       </p>
     </div>
   );
@@ -546,9 +640,9 @@ function PaperclipIcon() {
   );
 }
 
-function CloseIcon() {
+function CloseSmallIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <line x1="18" x2="6" y1="6" y2="18" />
       <line x1="6" x2="18" y1="6" y2="18" />
     </svg>
@@ -557,7 +651,7 @@ function CloseIcon() {
 
 function FilePendingIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-chatz-primary">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-chatz-primary">
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
       <polyline points="14 2 14 8 20 8" />
     </svg>

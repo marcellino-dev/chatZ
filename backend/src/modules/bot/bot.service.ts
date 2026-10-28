@@ -6,6 +6,14 @@ import { sendWhatsAppMessage } from '../whatsapp/whatsapp.service';
 interface BotInput {
   phone: string;
   message: string;
+  attachment?: {
+    url: string;
+    filename: string;
+    originalName: string;
+    mimetype: string;
+    size: number;
+    type: 'image' | 'video' | 'audio' | 'document';
+  } | null;
 }
 
 interface BotReply {
@@ -24,6 +32,9 @@ export async function processMessage(input: BotInput): Promise<BotReply> {
   console.log('═══════════════════════════════════════════════════');
   console.log(`🤖 BOT [${phone}]`);
   console.log(`📩 Recebido: "${message}"`);
+  if (input.attachment) {
+    console.log(`📎 Anexo: ${input.attachment.originalName} (${input.attachment.type})`);
+  }
 
   let conversation = await prisma.conversation.findUnique({
     where: { phone },
@@ -55,15 +66,17 @@ export async function processMessage(input: BotInput): Promise<BotReply> {
   console.log(`📍 Estado atual: ${conversation.state}`);
   if (conversation.sector) {
     console.log(`🏢 Setor: ${conversation.sector.name} (${conversation.sector.slug})`);
-  } else {
-    console.log(`🏢 Setor: (nenhum)`);
   }
   if (conversation.ticketId) {
     console.log(`🎫 Ticket: ${conversation.ticketId}`);
-  } else {
-    console.log(`🎫 Ticket: (nenhum)`);
   }
   console.log('───────────────────────────────────────────────────');
+
+  // Se tá em atendimento (IN_ATTENDANCE) e chegou mídia → salva sem processar como texto
+  if (conversation.state === 'IN_ATTENDANCE' && input.attachment) {
+    console.log('➡️  Mídia recebida em atendimento — salvando no ticket');
+    return handleInAttendance(conversation, message, input.attachment);
+  }
 
   switch (conversation.state) {
     case 'WAITING_SECTOR': {
@@ -87,7 +100,7 @@ export async function processMessage(input: BotInput): Promise<BotReply> {
     }
 
     case 'WAITING_ATTENDANCE': {
-      console.log('➡️  Roteando para: WAITING_ATTENDANCE (aguardando atendente)');
+      console.log('➡️  Roteando para: WAITING_ATTENDANCE');
       const reply = msg.messages.alreadyInAttendance;
       await sendWhatsAppMessage({ phone, text: reply });
       console.log('═══════════════════════════════════════════════════');
@@ -95,8 +108,8 @@ export async function processMessage(input: BotInput): Promise<BotReply> {
     }
 
     case 'IN_ATTENDANCE': {
-      console.log('➡️  Roteando para: handleInAttendance (atendente ativo)');
-      const result = await handleInAttendance(conversation, message);
+      console.log('➡️  Roteando para: handleInAttendance');
+      const result = await handleInAttendance(conversation, message, input.attachment);
       console.log('═══════════════════════════════════════════════════');
       return result;
     }
@@ -143,7 +156,7 @@ async function handleSectorChoice(conversation: any, message: string): Promise<B
   const chosenSector = sectors[index];
 
   if (!chosenSector) {
-    console.log(`❌ Opção inválida: "${message}" (index ${index})`);
+    console.log(`❌ Opção inválida: "${message}"`);
     return {
       reply: msg.messages.invalidOption + '\n\n' + (await buildSectorMenu()),
     };
@@ -185,7 +198,7 @@ async function handleAgentChoice(conversation: any, message: string): Promise<Bo
   }
 
   if (!conversation.sectorId) {
-    console.log('⚠️  Sem sectorId — resetando para WAITING_SECTOR');
+    console.log('⚠️  Sem sectorId — resetando');
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: { state: 'WAITING_SECTOR' },
@@ -220,10 +233,6 @@ async function handleAgentChoice(conversation: any, message: string): Promise<Bo
   const index = parseInt(message) - 1;
   const isQualquerUm = index === agents.length;
   const chosenAgent = isQualquerUm ? null : agents[index];
-
-  console.log(
-    `🔍 Escolha: index=${index}, qualquerUm=${isQualquerUm}, agent=${chosenAgent?.name ?? 'nenhum'}`
-  );
 
   if (!isQualquerUm && (!chosenAgent || chosenAgent === undefined)) {
     console.log(`❌ Opção inválida: "${message}"`);
@@ -288,7 +297,11 @@ async function handleAgentChoice(conversation: any, message: string): Promise<Bo
 // ==========================
 // HANDLER: EM ATENDIMENTO
 // ==========================
-async function handleInAttendance(conversation: any, message: string): Promise<BotReply> {
+async function handleInAttendance(
+  conversation: any,
+  message: string,
+  attachment?: BotInput['attachment']
+): Promise<BotReply> {
   if (!conversation.ticketId) {
     console.log('⚠️  IN_ATTENDANCE sem ticketId — resetando');
     await prisma.conversation.update({
@@ -314,12 +327,12 @@ async function handleInAttendance(conversation: any, message: string): Promise<B
 
   console.log(`💾 Salvando mensagem no ticket ${ticket.id}`);
 
-  // 🔥 SEM 'channel' — foi removido do schema Message
   const newMessage = await prisma.message.create({
     data: {
-      content: message,
+      content: message || '',
       ticketId: ticket.id,
       senderId: ticket.clientId,
+      ...(attachment && { attachment: attachment as any }),
     },
     include: {
       sender: {
@@ -329,6 +342,9 @@ async function handleInAttendance(conversation: any, message: string): Promise<B
   });
 
   console.log(`✅ Mensagem salva (id: ${newMessage.id})`);
+  if (attachment) {
+    console.log(`   📎 Com anexo: ${attachment.originalName}`);
+  }
 
   emitToTicket(ticket.id, 'message:new', newMessage);
 
