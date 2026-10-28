@@ -14,6 +14,9 @@ interface AuthUser {
   sectorId?: string | null;
 }
 
+// ==========================
+// LISTAR MENSAGENS
+// ==========================
 export async function listMessages(user: AuthUser, ticketId: string) {
   const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
   if (!ticket) throw new AppError('Ticket não encontrado', 404);
@@ -52,6 +55,9 @@ export async function listMessages(user: AuthUser, ticketId: string) {
   return messages;
 }
 
+// ==========================
+// ENVIAR MENSAGEM
+// ==========================
 export async function sendMessage(
   user: AuthUser,
   ticketId: string,
@@ -78,7 +84,9 @@ export async function sendMessage(
     );
   }
 
-  // 🔥 Cria message — só passa attachment se existir
+  // ==========================
+  // CRIA MENSAGEM NO BANCO
+  // ==========================
   const message = await prisma.message.create({
     data: {
       content: data.content ?? '',
@@ -94,28 +102,43 @@ export async function sendMessage(
   emitToTicket(ticketId, 'message:new', message);
   emitToSector(ticket.sectorId, 'ticket:updated', ticket);
 
-  // 📱 WhatsApp
+  // ==========================
+  // ENVIA PRO WHATSAPP
+  // ==========================
   if (user.role !== 'CLIENT' && ticket.client.phone) {
     try {
       const baseUrl = env.BASE_URL.replace(/\/$/, '');
       const phone = ticket.client.phone;
 
+      // Busca nome do atendente (sender da mensagem)
+      const senderName = message.sender.name;
+
+      // Formata legenda/texto com nome do atendente em negrito
+      const formatWithName = (text: string) => {
+        if (!text) return text;
+        return `*${senderName}:*\n${text}`;
+      };
+
       if (data.attachment) {
         const fullUrl = `${baseUrl}${data.attachment.url}`;
+
         console.log(`📎 Enviando mídia: ${data.attachment.originalName}`);
         console.log(`   🔗 URL: ${fullUrl}`);
+        console.log(`   👤 Atendente: ${senderName}`);
 
         await sendWhatsAppMedia({
           phone,
           url: fullUrl,
           mimetype: data.attachment.mimetype,
           filename: data.attachment.originalName,
-          caption: data.content?.trim() || undefined,
+          caption: formatWithName(data.content?.trim() || ''),
         });
       } else if (data.content?.trim()) {
+        console.log(`👤 Atendente: ${senderName}`);
+
         await sendWhatsAppMessage({
           phone,
-          text: data.content,
+          text: formatWithName(data.content),
         });
       }
     } catch (err) {
