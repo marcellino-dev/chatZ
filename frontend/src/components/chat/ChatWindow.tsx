@@ -6,6 +6,7 @@ import { useTicketsStore } from '../../stores/tickets';
 import { api, getErrorMessage } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
 import { AttachmentPreview, type Attachment } from './AttachmentPreview';
+import { SimpleEmojiPicker } from './EmojiPicker';
 import { playDing } from '../../lib/sounds';
 import { incrementUnread } from '../../lib/notifications';
 import type { Ticket, Message } from '../../types';
@@ -44,6 +45,10 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   const [dragging, setDragging] = useState(false);
   const [typingUsers, setTypingUsers] = useState<Map<string, TypingUser>>(new Map());
 
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const emojiButtonRef = useRef<HTMLButtonElement>(null);
+
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isTypingRef = useRef(false);
 
@@ -71,9 +76,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     return () => clear();
   }, [id, fetchMessages, clear]);
 
-  // ==========================
-  // SOCKET.IO
-  // ==========================
+  // Socket.IO
   useEffect(() => {
     if (!id) return;
     const socket = getSocket();
@@ -87,10 +90,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
 
     function handleNew(msg: Message) {
       if (msg.ticketId !== id) return;
-
       addMessage(msg);
-
-      // 🔔 Se não é minha mensagem, toca ding + incrementa badge
       const isMine = msg.senderId === user?.id;
       if (!isMine) {
         playDing();
@@ -152,6 +152,26 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     if (id) inputRef.current?.focus();
   }, [id]);
 
+  // Fecha emoji picker ao clicar fora
+  useEffect(() => {
+    if (!emojiOpen) return;
+
+    function handleClickOutside(e: MouseEvent) {
+      const target = e.target as Node;
+      if (
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(target) &&
+        emojiButtonRef.current &&
+        !emojiButtonRef.current.contains(target)
+      ) {
+        setEmojiOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [emojiOpen]);
+
   // Typing
   function handleInputChange(value: string) {
     setInput(value);
@@ -180,6 +200,27 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
         isTypingRef.current = false;
       }
     }, 3000);
+  }
+
+  // Emoji
+  function handleEmojiClick(emoji: string) {
+    const inputEl = inputRef.current;
+
+    if (inputEl) {
+      const start = inputEl.selectionStart ?? input.length;
+      const end = inputEl.selectionEnd ?? input.length;
+      const newValue = input.slice(0, start) + emoji + input.slice(end);
+      setInput(newValue);
+
+      requestAnimationFrame(() => {
+        inputEl.focus();
+        inputEl.setSelectionRange(start + emoji.length, start + emoji.length);
+      });
+
+      handleInputChange(newValue);
+    } else {
+      setInput((prev) => prev + emoji);
+    }
   }
 
   // Arquivos
@@ -279,6 +320,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     setSending(true);
     setInput('');
     setPendingFiles([]);
+    setEmojiOpen(false);
 
     const socket = getSocket();
     if (socket && isTypingRef.current) {
@@ -531,7 +573,20 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
               </div>
             )}
 
-            <form onSubmit={handleSend} className="p-3 flex items-center gap-2">
+            <form onSubmit={handleSend} className="p-3 flex items-center gap-2 relative">
+              {/* Emoji picker */}
+              {emojiOpen && (
+                <div
+                  ref={emojiPickerRef}
+                  className="absolute bottom-full left-12 mb-2 z-50"
+                >
+                  <SimpleEmojiPicker
+                    onEmojiClick={handleEmojiClick}
+                    onClose={() => setEmojiOpen(false)}
+                  />
+                </div>
+              )}
+
               <input
                 ref={fileInputRef}
                 type="file"
@@ -539,6 +594,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
                 className="hidden"
                 onChange={handleFileInputChange}
               />
+
               <button
                 type="button"
                 title="Anexar arquivos"
@@ -547,6 +603,21 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
               >
                 <PaperclipIcon />
               </button>
+
+              <button
+                type="button"
+                ref={emojiButtonRef}
+                title="Emoji"
+                onClick={() => setEmojiOpen((v) => !v)}
+                className={`w-10 h-10 rounded-chatz flex items-center justify-center transition-all ${
+                  emojiOpen
+                    ? 'bg-chatz-primary-light text-chatz-primary'
+                    : 'text-chatz-text-muted hover:bg-chatz-surface-hover'
+                }`}
+              >
+                <EmojiIcon />
+              </button>
+
               <input
                 ref={inputRef}
                 type="text"
@@ -560,6 +631,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
                 disabled={sending}
                 className="flex-1 px-4 py-2.5 bg-chatz-surface-alt border border-chatz-border rounded-full text-sm text-chatz-text placeholder:text-chatz-text-subtle focus:border-chatz-primary focus:ring-2 focus:ring-chatz-primary/20 transition-all"
               />
+
               <button
                 type="submit"
                 disabled={!canSubmit}
@@ -638,6 +710,9 @@ function SendIcon() {
 }
 function PaperclipIcon() {
   return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>);
+}
+function EmojiIcon() {
+  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><line x1="9" x2="9.01" y1="9" y2="9" /><line x1="15" x2="15.01" y1="9" y2="9" /></svg>);
 }
 function CloseSmallIcon() {
   return (<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" x2="6" y1="6" y2="18" /><line x1="6" x2="18" y1="6" y2="18" /></svg>);
