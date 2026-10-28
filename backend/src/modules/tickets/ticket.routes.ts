@@ -16,6 +16,11 @@ router.patch('/:id/assign', ticketController.assign);
 router.patch('/:id/status', ticketController.updateStatus);
 router.patch('/:id/priority', ticketController.updatePriority);
 
+// Participantes
+router.get('/:id/participants', ticketController.listParticipants);
+router.post('/:id/participants', ticketController.addParticipant);
+router.delete('/:id/participants/:userId', ticketController.removeParticipant);
+
 // Aninhados
 router.use('/:ticketId/messages', messageRoutes);
 router.use('/:ticketId/transfers', transferRoutes);

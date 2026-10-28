@@ -17,7 +17,6 @@ export function ChatList() {
   const { id: activeId } = useParams<{ id: string }>();
   const user = useAuthStore((s) => s.user);
   const { tickets, loading, fetchTickets } = useTicketsStore();
-  // 🔥 Abre direto em "Em atendimento"
   const [filter, setFilter] = useState<Filter>('active');
   const [search, setSearch] = useState('');
   const [unreadMap, setUnreadMap] = useState<Record<string, number>>({});
@@ -46,24 +45,20 @@ export function ChatList() {
     }
   }, [activeId]);
 
-  // Carrega tickets
+  // 🔥 Carrega tickets (SEMPRE sem mine=true, pra incluir participantes)
   useEffect(() => {
     if (!user) return;
-    const params: any = {};
-    if (user.role === 'AGENT' && filter === 'active') params.mine = true;
-    fetchTickets(params);
+    fetchTickets({});
   }, [user, filter, fetchTickets, reloadTrigger]);
 
-  // Socket.IO — força reload
+  // Socket.IO — reload em QUALQUER evento relevante
   useEffect(() => {
     const socket = getSocket();
     if (!socket || !user) return;
 
     function reload() {
       console.log('🔄 [ChatList] Reloading tickets...');
-      const params: any = {};
-      if (user && user.role === 'AGENT' && filter === 'active') params.mine = true;
-      fetchTickets(params).then(() => {
+      fetchTickets({}).then(() => {
         setReloadTrigger((r) => r + 1);
       });
     }
@@ -71,15 +66,18 @@ export function ChatList() {
     socket.on('ticket:new', reload);
     socket.on('ticket:assigned', reload);
     socket.on('ticket:updated', reload);
+    socket.on('ticket:participant-added', reload);
+    socket.on('ticket:participant-removed', reload);
 
     return () => {
       socket.off('ticket:new', reload);
       socket.off('ticket:assigned', reload);
       socket.off('ticket:updated', reload);
+      socket.off('ticket:participant-added', reload);
+      socket.off('ticket:participant-removed', reload);
     };
   }, [user, filter, fetchTickets]);
 
-  // Contadores
   const counts = useMemo(() => {
     const waiting = tickets.filter((t) => t.status === 'WAITING').length;
     const active = tickets.filter((t) => t.status === 'IN_PROGRESS').length;
@@ -114,7 +112,6 @@ export function ChatList() {
     return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
   });
 
-  // 🔥 ORDEM NOVA: Em atendimento → Aguardando → Todas → Resolvidas
   const tabs: { key: Filter; label: string; count: number; color: string }[] = [
     { key: 'active', label: 'Em atendimento', count: counts.active, color: 'bg-chatz-success' },
     { key: 'waiting', label: 'Aguardando', count: counts.waiting, color: 'bg-chatz-warning' },

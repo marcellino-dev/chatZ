@@ -12,18 +12,26 @@ export function connectSocket(token: string): Socket {
   socket = io(socketUrl, {
     auth: { token },
     transports: ['websocket'],
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
   });
 
   socket.on('connect', () => {
     console.log('🔌 Socket conectado');
   });
 
-  socket.on('disconnect', () => {
-    console.log('🔌 Socket desconectado');
+  socket.on('disconnect', (reason) => {
+    console.log('🔌 Socket desconectado:', reason);
   });
 
   socket.on('connect_error', (err) => {
     console.error('🔌 Erro de conexão:', err.message);
+  });
+
+  socket.on('reconnect', (attempt) => {
+    console.log(`🔌 Reconectado após ${attempt} tentativas`);
   });
 
   return socket;

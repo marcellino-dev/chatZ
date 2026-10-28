@@ -74,22 +74,30 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     return () => clear();
   }, [id, fetchMessages, clear]);
 
-  // Socket.IO — só mensagens, sem notificação (notificação é global)
+  // ==========================
+  // SOCKET.IO — TEMPO REAL
+  // ==========================
   useEffect(() => {
     if (!id) return;
     const socket = getSocket();
     if (!socket) return;
 
+    // 🔥 FORÇA JOIN IMEDIATAMENTE
     function join() {
+      console.log('📌 [ChatWindow] Entrando na sala ticket:', id);
       socket.emit('ticket:join', id);
     }
-    if (socket.connected) join();
+
+    // Sempre chama, independente de estar conectado ou não
+    join();
+
+    // E re-join se reconectar
     socket.on('connect', join);
 
     function handleNew(msg: Message) {
+      console.log('📩 [ChatWindow] message:new recebida:', msg);
       if (msg.ticketId !== id) return;
       addMessage(msg);
-      // 🔕 Notificação é gerenciada pelo GlobalNotifications
     }
 
     function handleUpdated(updated: Ticket) {
@@ -127,6 +135,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     socket.on('typing:update', handleTypingUpdate);
 
     return () => {
+      console.log('📌 [ChatWindow] Saindo da sala ticket:', id);
       socket.emit('ticket:leave', id);
       socket.off('connect', join);
       socket.off('message:new', handleNew);

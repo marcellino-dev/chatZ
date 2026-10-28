@@ -56,7 +56,7 @@ export async function createTicket(user: AuthUser, data: CreateTicketInput) {
 }
 
 // ==========================
-// LISTAR TICKETS (corrigido)
+// LISTAR TICKETS
 // ==========================
 export async function listTickets(user: AuthUser, query: ListTicketsQuery) {
   const where: any = {};
@@ -70,7 +70,12 @@ export async function listTickets(user: AuthUser, query: ListTicketsQuery) {
       if (user.sectorId) {
         where.sectorId = user.sectorId;
       }
-      where.OR = [{ agentId: null }, { agentId: user.id }];
+      // 🔥 Inclui tickets que é participante
+      where.OR = [
+        { agentId: null },
+        { agentId: user.id },
+        { participants: { some: { userId: user.id } } },
+      ];
     }
   }
 
@@ -86,6 +91,11 @@ export async function listTickets(user: AuthUser, query: ListTicketsQuery) {
       client: { select: { id: true, name: true, phone: true, role: true } },
       agent: { select: { id: true, name: true, email: true, role: true } },
       requestedAgent: { select: { id: true, name: true, email: true, role: true } },
+      participants: {
+        include: {
+          user: { select: { id: true, name: true, email: true, role: true } },
+        },
+      },
       _count: { select: { messages: true } },
     },
   });
@@ -112,12 +122,28 @@ export async function getTicketById(user: AuthUser, id: string) {
           toSector: { select: { id: true, name: true, slug: true } },
         },
       },
+      participants: {
+        include: {
+          user: { select: { id: true, name: true, email: true, role: true } },
+          addedBy: { select: { id: true, name: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+      },
     },
   });
 
   if (!ticket) throw new AppError('Ticket não encontrado', 404);
-  if (!canViewTicket(user, ticket))
-    throw new AppError('Sem permissão para ver este ticket', 403);
+
+  // Verifica permissão
+  if (!canViewTicket(user, ticket)) {
+    // Se é participante, permite
+    const isParticipant = await prisma.ticketParticipant.findUnique({
+      where: { ticketId_userId: { ticketId: id, userId: user.id } },
+    });
+    if (!isParticipant) {
+      throw new AppError('Sem permissão para ver este ticket', 403);
+    }
+  }
 
   return ticket;
 }
@@ -139,10 +165,7 @@ export async function assignTicket(user: AuthUser, id: string) {
 
   const updated = await prisma.ticket.update({
     where: { id },
-    data: {
-      agentId: user.id,
-      status: 'IN_PROGRESS',
-    },
+    data: { agentId: user.id, status: 'IN_PROGRESS' },
     include: {
       sector: { select: { id: true, name: true, slug: true } },
       client: { select: { id: true, name: true, phone: true, role: true } },
@@ -165,15 +188,18 @@ export async function assignTicket(user: AuthUser, id: string) {
 // ==========================
 // ATUALIZAR STATUS
 // ==========================
-export async function updateStatus(
-  user: AuthUser,
-  id: string,
-  data: UpdateStatusInput
-) {
+export async function updateStatus(user: AuthUser, id: string, data: UpdateStatusInput) {
   const ticket = await prisma.ticket.findUnique({ where: { id } });
   if (!ticket) throw new AppError('Ticket não encontrado', 404);
-  if (!canModifyTicket(user, ticket))
+
+  // Permite agent, ADMIN, ou participante
+  const isParticipant = await prisma.ticketParticipant.findUnique({
+    where: { ticketId_userId: { ticketId: id, userId: user.id } },
+  });
+
+  if (!canModifyTicket(user, ticket) && !isParticipant) {
     throw new AppError('Sem permissão para alterar este ticket', 403);
+  }
 
   const updated = await prisma.ticket.update({
     where: { id },
@@ -208,15 +234,17 @@ export async function updateStatus(
 // ==========================
 // ATUALIZAR PRIORIDADE
 // ==========================
-export async function updatePriority(
-  user: AuthUser,
-  id: string,
-  data: UpdatePriorityInput
-) {
+export async function updatePriority(user: AuthUser, id: string, data: UpdatePriorityInput) {
   const ticket = await prisma.ticket.findUnique({ where: { id } });
   if (!ticket) throw new AppError('Ticket não encontrado', 404);
-  if (!canModifyTicket(user, ticket))
+
+  const isParticipant = await prisma.ticketParticipant.findUnique({
+    where: { ticketId_userId: { ticketId: id, userId: user.id } },
+  });
+
+  if (!canModifyTicket(user, ticket) && !isParticipant) {
     throw new AppError('Sem permissão para alterar este ticket', 403);
+  }
 
   const updated = await prisma.ticket.update({
     where: { id },
@@ -233,4 +261,134 @@ export async function updatePriority(
   emitToTicket(id, 'ticket:updated', updated);
 
   return updated;
+}
+
+// ==========================
+// ADICIONAR PARTICIPANTE
+// ==========================
+export async function addParticipant(
+  user: AuthUser,
+  ticketId: string,
+  participantUserId: string
+) {
+  const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+  if (!ticket) throw new AppError('Ticket não encontrado', 404);
+
+  if (ticket.agentId !== user.id && user.role !== 'ADMIN') {
+    throw new AppError('Apenas o atendente responsável pode adicionar', 403);
+  }
+
+  if (participantUserId === user.id) {
+    throw new AppError('Você já é o atendente principal', 400);
+  }
+
+  const targetUser = await prisma.user.findUnique({
+    where: { id: participantUserId },
+    select: { id: true, name: true, role: true, active: true },
+  });
+
+  if (!targetUser) throw new AppError('Usuário não encontrado', 404);
+  if (!targetUser.active) throw new AppError('Usuário inativo', 400);
+  if (targetUser.role !== 'AGENT' && targetUser.role !== 'ADMIN') {
+    throw new AppError('Apenas atendentes podem ser adicionados', 400);
+  }
+
+  const existing = await prisma.ticketParticipant.findUnique({
+    where: { ticketId_userId: { ticketId, userId: participantUserId } },
+  });
+  if (existing) throw new AppError('Este usuário já está participando', 409);
+
+  const participant = await prisma.ticketParticipant.create({
+    data: { ticketId, userId: participantUserId, addedById: user.id },
+    include: {
+      user: { select: { id: true, name: true, email: true, role: true } },
+      addedBy: { select: { id: true, name: true } },
+    },
+  });
+
+  // 🔥 Emite pra quem foi adicionado
+  emitToUser(participantUserId, 'ticket:participant-added', {
+    ticketId,
+    participant,
+  });
+
+  // 🔥 Emite pra sala do ticket
+  emitToTicket(ticketId, 'ticket:participant-added', participant);
+
+  // 🔥 IMPORTANTE: força o participante a recarregar a lista (via ticket:new)
+  const fullTicket = await prisma.ticket.findUnique({
+    where: { id: ticketId },
+    include: {
+      sector: { select: { id: true, name: true, slug: true } },
+      client: { select: { id: true, name: true, phone: true, role: true } },
+      agent: { select: { id: true, name: true, email: true, role: true } },
+      requestedAgent: { select: { id: true, name: true, email: true, role: true } },
+      participants: {
+        include: {
+          user: { select: { id: true, name: true, email: true, role: true } },
+        },
+      },
+    },
+  });
+
+  if (fullTicket) {
+    emitToUser(participantUserId, 'ticket:new', fullTicket);
+  }
+
+  // 🔥 Emite pro setor
+  emitToSector(ticket.sectorId, 'ticket:updated', ticket);
+
+  return participant;
+}
+
+// ==========================
+// REMOVER PARTICIPANTE
+// ==========================
+export async function removeParticipant(
+  user: AuthUser,
+  ticketId: string,
+  participantUserId: string
+) {
+  const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+  if (!ticket) throw new AppError('Ticket não encontrado', 404);
+
+  if (ticket.agentId !== user.id && user.role !== 'ADMIN') {
+    throw new AppError('Apenas o atendente responsável pode remover', 403);
+  }
+
+  const participant = await prisma.ticketParticipant.findUnique({
+    where: { ticketId_userId: { ticketId, userId: participantUserId } },
+  });
+
+  if (!participant) throw new AppError('Participante não encontrado', 404);
+
+  await prisma.ticketParticipant.delete({ where: { id: participant.id } });
+
+  emitToUser(participantUserId, 'ticket:participant-removed', { ticketId });
+  emitToTicket(ticketId, 'ticket:participant-removed', {
+    ticketId,
+    userId: participantUserId,
+  });
+  emitToSector(ticket.sectorId, 'ticket:updated', ticket);
+
+  return { ok: true };
+}
+
+// ==========================
+// LISTAR PARTICIPANTES
+// ==========================
+export async function listParticipants(user: AuthUser, ticketId: string) {
+  const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+  if (!ticket) throw new AppError('Ticket não encontrado', 404);
+
+  const participants = await prisma.ticketParticipant.findMany({
+    where: { ticketId },
+    include: {
+      user: { select: { id: true, name: true, email: true, role: true } },
+      addedBy: { select: { id: true, name: true } },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  return participants;
 }

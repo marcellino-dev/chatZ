@@ -11,10 +11,7 @@ export interface Sector {
   active: boolean;
   createdAt: string;
   updatedAt: string;
-  _count?: {
-    users: number;
-    tickets: number;
-  };
+  _count?: { users: number; tickets: number };
 }
 
 export interface User {
@@ -51,6 +48,24 @@ export type TicketStatus =
 
 export type TicketPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 
+export interface TicketParticipant {
+  id: string;
+  ticketId: string;
+  userId: string;
+  addedById: string | null;
+  createdAt: string;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    role: Role;
+  };
+  addedBy: {
+    id: string;
+    name: string;
+  } | null;
+}
+
 export interface Ticket {
   id: string;
   subject: string;
@@ -71,6 +86,7 @@ export interface Ticket {
   requestedAgent: Pick<User, 'id' | 'name' | 'email' | 'role'> | null;
 
   transfers?: Transfer[];
+  participants?: TicketParticipant[];
 
   _count?: { messages: number };
 }

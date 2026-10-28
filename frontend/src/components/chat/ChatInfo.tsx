@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api, getErrorMessage } from '../../lib/api';
+import { getSocket } from '../../lib/socket';
 import { useTicketsStore } from '../../stores/tickets';
+import { TransferModal } from './TransferModal';
+import { AddParticipantModal } from './AddParticipantModal';
 import type { Ticket } from '../../types';
 
 interface Props {
@@ -15,15 +18,49 @@ export function ChatInfo({ onClose }: Props) {
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+
+  async function loadTicket() {
+    if (!id) return;
+    console.log('🔄 [ChatInfo] Recarregando ticket:', id);
+    setLoading(true);
+    try {
+      const { data } = await api.get<Ticket>(`/tickets/${id}`);
+      console.log('✅ [ChatInfo] Ticket carregado');
+      console.log('   Status:', data.status);
+      console.log('   Participantes:', data.participants?.map((p) => p.user.name));
+      setTicket(data);
+    } catch (err) {
+      console.error('❌ [ChatInfo] Erro:', err);
+      setTicket(null);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
+    loadTicket();
+  }, [id]);
+
+  // Recarrega quando muda o participante (via socket)
+  useEffect(() => {
     if (!id) return;
-    setLoading(true);
-    api
-      .get<Ticket>(`/tickets/${id}`)
-      .then(({ data }) => setTicket(data))
-      .catch(() => setTicket(null))
-      .finally(() => setLoading(false));
+    const socket = getSocket();
+    if (!socket) return;
+
+    function handleParticipantChange() {
+      console.log('👥 [ChatInfo] Participante mudou, recarregando...');
+      loadTicket();
+    }
+
+    socket.on('ticket:participant-added', handleParticipantChange);
+    socket.on('ticket:participant-removed', handleParticipantChange);
+
+    return () => {
+      socket.off('ticket:participant-added', handleParticipantChange);
+      socket.off('ticket:participant-removed', handleParticipantChange);
+    };
   }, [id]);
 
   async function handleResolve() {
@@ -40,6 +77,11 @@ export function ChatInfo({ onClose }: Props) {
     }
   }
 
+  async function handleParticipantAdded() {
+    console.log('✅ [ChatInfo] Participante adicionado, recarregando ticket...');
+    await loadTicket();
+  }
+
   if (!id || loading) return null;
   if (!ticket) return null;
 
@@ -50,10 +92,13 @@ export function ChatInfo({ onClose }: Props) {
     .join('')
     .toUpperCase();
 
+  const isActive =
+    ticket.status === 'WAITING' || ticket.status === 'IN_PROGRESS';
+  const hasAgent = ticket.agentId !== null;
+  const canModify = isActive && hasAgent;
+
   return (
     <aside className="w-[340px] bg-chatz-surface border-l border-chatz-border flex flex-col shrink-0 animate-slide-in">
-
-      {/* Header */}
       <div className="h-16 px-4 border-b border-chatz-border flex items-center justify-between shrink-0">
         <p className="text-sm font-semibold text-chatz-text">Detalhes</p>
         <button
@@ -65,10 +110,7 @@ export function ChatInfo({ onClose }: Props) {
         </button>
       </div>
 
-      {/* Conteúdo scrollável */}
       <div className="flex-1 overflow-y-auto">
-
-        {/* Perfil */}
         <div className="p-6 text-center border-b border-chatz-border">
           <div className="w-20 h-20 rounded-full bg-gradient-to-br from-chatz-purple to-chatz-pink
                           flex items-center justify-center text-white font-bold text-2xl mx-auto mb-3">
@@ -77,31 +119,36 @@ export function ChatInfo({ onClose }: Props) {
           <h3 className="text-base font-semibold text-chatz-text mb-1">
             {ticket.client.name}
           </h3>
-          <p className="text-xs text-chatz-text-muted mb-1">
-            {ticket.client.phone}
-          </p>
-          {ticket.client.email && (
-            <p className="text-xs text-chatz-text-muted">{ticket.client.email}</p>
-          )}
+          <p className="text-xs text-chatz-text-muted">{ticket.client.phone}</p>
         </div>
 
-        {/* Ticket */}
         <Section title="Ticket">
           <Row label="Protocolo" value={`#${ticket.id.slice(0, 8)}`} />
           <Row label="Setor" value={ticket.sector.name} />
-          <Row
-            label="Atendente"
-            value={ticket.agent?.name ?? 'Aguardando'}
-          />
+          <Row label="Atendente" value={ticket.agent?.name ?? 'Aguardando'} />
           <Row label="Status" value={statusLabel(ticket.status)} />
           <Row label="Prioridade" value={priorityLabel(ticket.priority)} />
-          <Row
-            label="Criado em"
-            value={new Date(ticket.createdAt).toLocaleString('pt-BR')}
-          />
         </Section>
 
-        {/* Histórico de transferências */}
+        {ticket.participants && ticket.participants.length > 0 && (
+          <Section title={`Participantes (${ticket.participants.length})`}>
+            {ticket.participants.map((p) => (
+              <div
+                key={p.id}
+                className="flex items-center gap-2 text-xs text-chatz-text-muted"
+              >
+                <span>🎧</span>
+                <span className="text-chatz-text">{p.user.name}</span>
+                {p.addedBy && (
+                  <span className="text-chatz-text-subtle">
+                    (por {p.addedBy.name})
+                  </span>
+                )}
+              </div>
+            ))}
+          </Section>
+        )}
+
         {ticket.transfers && ticket.transfers.length > 0 && (
           <Section title="Transferências">
             <div className="space-y-2">
@@ -114,51 +161,86 @@ export function ChatInfo({ onClose }: Props) {
                     </span>
                   </p>
                   {t.reason && (
-                    <p className="italic text-chatz-text-subtle">
-                      "{t.reason}"
-                    </p>
+                    <p className="italic text-chatz-text-subtle">"{t.reason}"</p>
                   )}
                 </div>
               ))}
             </div>
           </Section>
         )}
-
       </div>
 
-      {/* Ações */}
       <div className="p-4 border-t border-chatz-border space-y-2 shrink-0">
-        <button
-          onClick={handleResolve}
-          disabled={actionLoading}
-          className="w-full py-2.5 px-4 rounded-chatz bg-chatz-success text-white
-                     text-sm font-semibold hover:bg-green-600 transition-all
-                     disabled:opacity-50 shadow-[0_4px_14px_rgba(16,185,129,0.30)]"
-        >
-          {actionLoading ? 'Processando...' : '✓ Marcar como resolvido'}
-        </button>
-        <button
-          onClick={() => alert('Em breve: transferir atendimento')}
-          className="w-full py-2.5 px-4 rounded-chatz
-                     bg-chatz-surface-alt border border-chatz-border text-chatz-text
-                     text-sm font-medium hover:bg-chatz-surface-hover transition-all"
-        >
-          🔄 Transferir
-        </button>
+        {!isActive && (
+          <div className="bg-chatz-surface-alt border border-chatz-border rounded-chatz
+                          px-4 py-3 text-center">
+            <p className="text-xs text-chatz-text-muted">
+              {ticket.status === 'RESOLVED' && '✅ Ticket resolvido'}
+              {ticket.status === 'CLOSED' && '🔒 Ticket fechado'}
+              {ticket.status === 'TRANSFERRED' && '🔄 Ticket transferido'}
+            </p>
+            <p className="text-[10px] text-chatz-text-subtle mt-1">
+              Não é possível modificar
+            </p>
+          </div>
+        )}
+
+        {canModify && (
+          <>
+            <button
+              onClick={() => setAddOpen(true)}
+              className="w-full py-2.5 px-4 rounded-chatz
+                         bg-chatz-primary-light border border-chatz-primary-border text-chatz-primary
+                         text-sm font-semibold hover:bg-chatz-primary/10 transition-all"
+            >
+              ➕ Adicionar à conversa
+            </button>
+
+            <button
+              onClick={() => setTransferOpen(true)}
+              className="w-full py-2.5 px-4 rounded-chatz
+                         bg-chatz-warning-light border border-chatz-warning-border text-chatz-warning
+                         text-sm font-semibold hover:bg-chatz-warning/10 transition-all"
+            >
+              🔄 Transferir
+            </button>
+
+            <button
+              onClick={handleResolve}
+              disabled={actionLoading}
+              className="w-full py-2.5 px-4 rounded-chatz bg-chatz-success text-white
+                         text-sm font-semibold hover:bg-green-600 transition-all
+                         disabled:opacity-50 shadow-[0_4px_14px_rgba(16,185,129,0.30)]"
+            >
+              {actionLoading ? 'Processando...' : '✓ Marcar como resolvido'}
+            </button>
+          </>
+        )}
       </div>
+
+      <TransferModal
+        isOpen={transferOpen}
+        ticketId={ticket.id}
+        currentSectorId={ticket.sectorId}
+        currentAgentId={ticket.agentId}
+        onClose={() => setTransferOpen(false)}
+        onSuccess={() => loadTicket()}
+      />
+
+      <AddParticipantModal
+        isOpen={addOpen}
+        ticketId={ticket.id}
+        currentSectorId={ticket.sectorId}
+        currentAgentId={ticket.agentId}
+        participants={ticket.participants ?? []}
+        onClose={() => setAddOpen(false)}
+        onSuccess={handleParticipantAdded}
+      />
     </aside>
   );
 }
 
-// ==========================
-// HELPERS// ==========================
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="p-4 border-b border-chatz-border">
       <p className="text-[10px] font-semibold text-chatz-text-subtle uppercase tracking-wider mb-3">

@@ -91,6 +91,9 @@ model User {
   transfersSent Transfer[] @relation("TransfersFrom")
   transfersRecv Transfer[] @relation("TransfersTo")
 
+  participatedTickets TicketParticipant[] @relation("TicketParticipants")
+  addedParticipants   TicketParticipant[] @relation("ParticipantAddedBy")
+
   @@map("users")
 }
 
@@ -120,11 +123,33 @@ model Ticket {
   updatedAt DateTime       @updatedAt
   closedAt  DateTime?
 
-  messages     Message[]
-  transfers    Transfer[]
-  conversation Conversation?
+  messages      Message[]
+  transfers     Transfer[]
+  conversation  Conversation?
+  participants  TicketParticipant[]
 
   @@map("tickets")
+}
+
+// ==========================
+// PARTICIPANTES DO TICKET
+// ==========================
+model TicketParticipant {
+  id        String   @id @default(cuid())
+
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  userId    String
+  user      User     @relation("TicketParticipants", fields: [userId], references: [id], onDelete: Cascade)
+
+  addedById String?
+  addedBy   User?    @relation("ParticipantAddedBy", fields: [addedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([ticketId, userId])
+  @@map("ticket_participants")
 }
 
 // ==========================
@@ -148,7 +173,7 @@ model Message {
 }
 
 // ==========================
-// CONVERSAS (estado do bot)
+// CONVERSAS
 // ==========================
 model Conversation {
   id        String    @id @default(cuid())
