@@ -6,6 +6,11 @@ import { Sectors } from './pages/Sectors';
 import { Users } from './pages/Users';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { useAuthStore } from './stores/auth';
+import {
+  setBaseTitle,
+  setupVisibilityListener,
+} from './lib/notifications';
+import { prepareAudio } from './lib/sounds';
 
 export default function App() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -13,6 +18,15 @@ export default function App() {
 
   useEffect(() => {
     hydrateSocket();
+    setBaseTitle('chatZ — Real-time support');
+    setupVisibilityListener();
+
+    // Prepara o audio no primeiro clique (política do navegador)
+    const handleFirstClick = () => {
+      prepareAudio();
+      document.removeEventListener('click', handleFirstClick);
+    };
+    document.addEventListener('click', handleFirstClick);
   }, [hydrateSocket]);
 
   return (
@@ -22,25 +36,14 @@ export default function App() {
           path="/login"
           element={isAuthenticated ? <Navigate to="/chat" replace /> : <Login />}
         />
-
         <Route element={<ProtectedRoute />}>
-          {/* Chat (tela cheia, sem Layout) */}
           <Route path="/chat" element={<Chat />} />
           <Route path="/chat/:id" element={<Chat />} />
-
-          {/* Admin pages com layout simples */}
           <Route path="/sectors" element={<Sectors />} />
           <Route path="/users" element={<Users />} />
         </Route>
-
-        <Route
-          path="/"
-          element={<Navigate to={isAuthenticated ? '/chat' : '/login'} replace />}
-        />
-        <Route
-          path="*"
-          element={<Navigate to={isAuthenticated ? '/chat' : '/login'} replace />}
-        />
+        <Route path="/" element={<Navigate to={isAuthenticated ? '/chat' : '/login'} replace />} />
+        <Route path="*" element={<Navigate to={isAuthenticated ? '/chat' : '/login'} replace />} />
       </Routes>
     </BrowserRouter>
   );

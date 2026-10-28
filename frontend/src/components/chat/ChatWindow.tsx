@@ -6,6 +6,8 @@ import { useTicketsStore } from '../../stores/tickets';
 import { api, getErrorMessage } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
 import { AttachmentPreview, type Attachment } from './AttachmentPreview';
+import { playDing } from '../../lib/sounds';
+import { incrementUnread } from '../../lib/notifications';
 import type { Ticket, Message } from '../../types';
 
 interface Props {
@@ -40,11 +42,8 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   const [assigning, setAssigning] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [dragging, setDragging] = useState(false);
+  const [typingUsers, setTypingUsers] = useState<Map<string, TypingUser>>(new Map());
 
-  // Typing
-  const [typingUsers, setTypingUsers] = useState<Map<string, TypingUser>>(
-    new Map()
-  );
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isTypingRef = useRef(false);
 
@@ -83,12 +82,20 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     function join() {
       socket.emit('ticket:join', id);
     }
-
     if (socket.connected) join();
     socket.on('connect', join);
 
     function handleNew(msg: Message) {
-      if (msg.ticketId === id) addMessage(msg);
+      if (msg.ticketId !== id) return;
+
+      addMessage(msg);
+
+      // 🔔 Se não é minha mensagem, toca ding + incrementa badge
+      const isMine = msg.senderId === user?.id;
+      if (!isMine) {
+        playDing();
+        incrementUnread();
+      }
     }
 
     function handleUpdated(updated: Ticket) {
@@ -96,7 +103,6 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
         setTicket((prev) => (prev ? { ...prev, ...updated } : updated));
     }
 
-    // Typing
     function handleTypingUpdate(data: {
       ticketId: string;
       userId: string;
@@ -105,7 +111,6 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       typing: boolean;
     }) {
       if (data.ticketId !== id) return;
-      // Ignora a si mesmo
       if (data.userId === user?.id) return;
 
       setTypingUsers((prev) => {
@@ -133,14 +138,12 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       socket.off('message:new', handleNew);
       socket.off('ticket:updated', handleUpdated);
       socket.off('typing:update', handleTypingUpdate);
-      // Limpa typing quando sai
       if (isTypingRef.current) {
         socket.emit('typing:stop', { ticketId: id });
       }
     };
   }, [id, addMessage, user?.id]);
 
-  // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, pendingFiles, typingUsers]);
@@ -149,27 +152,20 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     if (id) inputRef.current?.focus();
   }, [id]);
 
-  // ==========================
-  // TYPING — emit start/stop
-  // ==========================
+  // Typing
   function handleInputChange(value: string) {
     setInput(value);
 
     const socket = getSocket();
     if (!socket || !id) return;
 
-    // Se tiver texto, emite start (uma vez só)
     if (value.trim() && !isTypingRef.current) {
       socket.emit('typing:start', { ticketId: id });
       isTypingRef.current = true;
     }
 
-    // Limpa timeout anterior
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current);
-    }
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
 
-    // Se vazio, emite stop imediato
     if (!value.trim()) {
       if (isTypingRef.current) {
         socket.emit('typing:stop', { ticketId: id });
@@ -178,7 +174,6 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       return;
     }
 
-    // Se ficar 3s sem digitar, emite stop
     typingTimeoutRef.current = setTimeout(() => {
       if (isTypingRef.current) {
         socket.emit('typing:stop', { ticketId: id });
@@ -187,9 +182,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     }, 3000);
   }
 
-  // ==========================
-  // ARQUIVOS
-  // ==========================
+  // Arquivos
   function addFiles(files: File[]) {
     const validFiles = files.filter((f) => f.size > 0);
     if (validFiles.length === 0) return;
@@ -244,21 +237,17 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     setPendingFiles([]);
   }
 
-  // ==========================
-  // DRAG & DROP
-  // ==========================
+  // Drag
   function handleDragOver(e: React.DragEvent) {
     e.preventDefault();
     e.stopPropagation();
     if (!dragging) setDragging(true);
   }
-
   function handleDragLeave(e: React.DragEvent) {
     e.preventDefault();
     e.stopPropagation();
     if (e.currentTarget === e.target) setDragging(false);
   }
-
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     e.stopPropagation();
@@ -267,9 +256,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     if (files.length > 0) addFiles(files);
   }
 
-  // ==========================
-  // ENVIAR
-  // ==========================
+  // Enviar
   async function handleSend(e: FormEvent) {
     e.preventDefault();
     if (!id) return;
@@ -279,7 +266,6 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       alert('Aguarde todos os uploads terminarem...');
       return;
     }
-
     const failedFiles = pendingFiles.filter((p) => p.error);
     if (failedFiles.length > 0) {
       alert('Remova os arquivos com erro antes de enviar.');
@@ -288,14 +274,12 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
 
     const readyFiles = pendingFiles.filter((p) => p.preview);
     const content = input.trim();
-
     if (!content && readyFiles.length === 0) return;
 
     setSending(true);
     setInput('');
     setPendingFiles([]);
 
-    // Para o typing ao enviar
     const socket = getSocket();
     if (socket && isTypingRef.current) {
       socket.emit('typing:stop', { ticketId: id });
@@ -342,7 +326,6 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   }
 
   if (!id) return <EmptyState />;
-
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center bg-chatz-bg">
@@ -350,7 +333,6 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       </div>
     );
   }
-
   if (!ticket) {
     return (
       <div className="flex-1 flex items-center justify-center bg-chatz-bg">
@@ -374,11 +356,8 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   const hasText = input.trim().length > 0;
   const hasUploading = pendingFiles.some((p) => p.uploading);
   const canSubmit =
-    !sending &&
-    !hasUploading &&
-    (hasText || pendingFiles.some((p) => p.preview));
+    !sending && !hasUploading && (hasText || pendingFiles.some((p) => p.preview));
 
-  // Texto do typing
   const typingNames = Array.from(typingUsers.values()).map((t) => t.userName);
   const typingText =
     typingNames.length === 0
@@ -395,23 +374,19 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       onDrop={canSend ? handleDrop : undefined}
     >
       {dragging && canSend && (
-        <div className="absolute inset-0 z-40 bg-chatz-primary/10 border-4 border-dashed border-chatz-primary rounded-lg
-                        flex items-center justify-center pointer-events-none">
+        <div className="absolute inset-0 z-40 bg-chatz-primary/10 border-4 border-dashed border-chatz-primary rounded-lg flex items-center justify-center pointer-events-none">
           <div className="bg-chatz-surface px-6 py-4 rounded-xl shadow-lg">
             <p className="text-chatz-primary font-semibold">Solte os arquivos aqui 🎯</p>
           </div>
         </div>
       )}
 
-      {/* Header */}
-      <header className="h-16 px-4 bg-chatz-surface border-b border-chatz-border
-                         flex items-center justify-between shrink-0 gap-3">
+      <header className="h-16 px-4 bg-chatz-surface border-b border-chatz-border flex items-center justify-between shrink-0 gap-3">
         <button
           onClick={onToggleInfo}
           className="flex items-center gap-3 hover:bg-chatz-surface-hover rounded-chatz px-2 py-1 transition-all min-w-0"
         >
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-chatz-purple to-chatz-pink
-                          flex items-center justify-center text-white font-semibold text-sm shrink-0">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-chatz-purple to-chatz-pink flex items-center justify-center text-white font-semibold text-sm shrink-0">
             {initials}
           </div>
           <div className="text-left min-w-0">
@@ -433,10 +408,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
             <button
               onClick={handleAssign}
               disabled={assigning}
-              className="px-4 py-2 rounded-chatz bg-chatz-button-gradient text-white
-                         text-sm font-semibold shadow-[0_4px_14px_rgba(236,72,153,0.35)]
-                         hover:brightness-105 transition-all
-                         disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 rounded-chatz bg-chatz-button-gradient text-white text-sm font-semibold shadow-[0_4px_14px_rgba(236,72,153,0.35)] hover:brightness-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {assigning ? 'Assumindo...' : '🎧 Assumir'}
             </button>
@@ -455,14 +427,12 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
         </div>
       </header>
 
-      {/* Mensagens */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {messages.length === 0 && (
           <div className="text-center py-12 text-chatz-text-muted text-sm">
             Nenhuma mensagem ainda. Comece a conversa.
           </div>
         )}
-
         <div className="space-y-2">
           {messages.map((msg, idx) => {
             const prev = messages[idx - 1];
@@ -479,7 +449,6 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
           })}
         </div>
 
-        {/* Indicador de typing embaixo */}
         {typingText && (
           <div className="flex items-center gap-2 mt-3 animate-fade-in">
             <div className="bg-chatz-surface border border-chatz-border rounded-2xl rounded-bl-sm px-3 py-2">
@@ -498,7 +467,6 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
       <footer className="border-t border-chatz-border bg-chatz-surface shrink-0">
         {canSend ? (
           <>
@@ -520,8 +488,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
                   {pendingFiles.map((pending) => (
                     <div
                       key={pending.id}
-                      className="relative bg-chatz-surface-alt rounded-chatz border border-chatz-border
-                                 p-2 flex items-center gap-2 max-w-[220px]"
+                      className="relative bg-chatz-surface-alt rounded-chatz border border-chatz-border p-2 flex items-center gap-2 max-w-[220px]"
                     >
                       <div className="w-10 h-10 rounded bg-chatz-primary-light flex items-center justify-center shrink-0 overflow-hidden">
                         {pending.preview?.type === 'image' ? (
@@ -554,9 +521,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
                       <button
                         type="button"
                         onClick={() => removePendingFile(pending.id)}
-                        className="w-5 h-5 rounded-full flex items-center justify-center
-                                   text-chatz-text-muted hover:bg-chatz-danger-light hover:text-chatz-danger
-                                   transition-all shrink-0"
+                        className="w-5 h-5 rounded-full flex items-center justify-center text-chatz-text-muted hover:bg-chatz-danger-light hover:text-chatz-danger transition-all shrink-0"
                       >
                         <CloseSmallIcon />
                       </button>
@@ -574,17 +539,14 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
                 className="hidden"
                 onChange={handleFileInputChange}
               />
-
               <button
                 type="button"
                 title="Anexar arquivos"
                 onClick={() => fileInputRef.current?.click()}
-                className="w-10 h-10 rounded-chatz flex items-center justify-center
-                           text-chatz-text-muted hover:bg-chatz-surface-hover transition-all"
+                className="w-10 h-10 rounded-chatz flex items-center justify-center text-chatz-text-muted hover:bg-chatz-surface-hover transition-all"
               >
                 <PaperclipIcon />
               </button>
-
               <input
                 ref={inputRef}
                 type="text"
@@ -596,19 +558,12 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
                     : 'Digite sua mensagem...'
                 }
                 disabled={sending}
-                className="flex-1 px-4 py-2.5 bg-chatz-surface-alt border border-chatz-border rounded-full
-                           text-sm text-chatz-text placeholder:text-chatz-text-subtle
-                           focus:border-chatz-primary focus:ring-2 focus:ring-chatz-primary/20 transition-all"
+                className="flex-1 px-4 py-2.5 bg-chatz-surface-alt border border-chatz-border rounded-full text-sm text-chatz-text placeholder:text-chatz-text-subtle focus:border-chatz-primary focus:ring-2 focus:ring-chatz-primary/20 transition-all"
               />
-
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="w-11 h-11 rounded-full bg-chatz-button-gradient text-white
-                           flex items-center justify-center shrink-0
-                           shadow-[0_4px_14px_rgba(236,72,153,0.35)]
-                           hover:brightness-105 transition-all
-                           disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
+                className="w-11 h-11 rounded-full bg-chatz-button-gradient text-white flex items-center justify-center shrink-0 shadow-[0_4px_14px_rgba(236,72,153,0.35)] hover:brightness-105 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
               >
                 {sending ? (
                   <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -632,38 +587,16 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   );
 }
 
-// ==========================
-// BOLHA
-// ==========================
-function MessageBubble({
-  message,
-  isMine,
-  showName,
-}: {
-  message: Message;
-  isMine: boolean;
-  showName: boolean;
-}) {
-  const time = new Date(message.createdAt).toLocaleTimeString('pt-BR', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+function MessageBubble({ message, isMine, showName }: { message: Message; isMine: boolean; showName: boolean }) {
+  const time = new Date(message.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const attachment = (message as any).attachment as Attachment | null;
   const hasContent = message.content?.trim().length > 0;
 
   return (
     <div className={`flex ${isMine ? 'justify-end' : 'justify-start'} animate-fade-in`}>
-      <div
-        className={`max-w-[70%] rounded-2xl ${
-          isMine
-            ? 'bg-chatz-button-gradient text-white rounded-br-sm shadow-[0_2px_8px_rgba(236,72,153,0.20)]'
-            : 'bg-chatz-surface border border-chatz-border text-chatz-text rounded-bl-sm'
-        } ${attachment && !hasContent ? 'p-2' : 'px-3.5 py-2'}`}
-      >
+      <div className={`max-w-[70%] rounded-2xl ${isMine ? 'bg-chatz-button-gradient text-white rounded-br-sm shadow-[0_2px_8px_rgba(236,72,153,0.20)]' : 'bg-chatz-surface border border-chatz-border text-chatz-text rounded-bl-sm'} ${attachment && !hasContent ? 'p-2' : 'px-3.5 py-2'}`}>
         {showName && !isMine && (
-          <p className="text-xs font-semibold mb-0.5 text-chatz-purple px-1.5 pt-0.5">
-            {message.sender.name}
-          </p>
+          <p className="text-xs font-semibold mb-0.5 text-chatz-purple px-1.5 pt-0.5">{message.sender.name}</p>
         )}
         {attachment && (
           <div className={hasContent ? 'mb-2' : ''}>
@@ -671,102 +604,47 @@ function MessageBubble({
           </div>
         )}
         {hasContent && (
-          <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-            {message.content}
-          </p>
+          <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
         )}
-        <p
-          className={`text-[10px] mt-1 text-right px-1 ${
-            isMine ? 'text-white/70' : 'text-chatz-text-subtle'
-          }`}
-        >
-          {time}
-        </p>
+        <p className={`text-[10px] mt-1 text-right px-1 ${isMine ? 'text-white/70' : 'text-chatz-text-subtle'}`}>{time}</p>
       </div>
     </div>
   );
 }
 
-// ==========================
-// ESTADO VAZIO
-// ==========================
 function EmptyState() {
   return (
     <div className="flex-1 flex flex-col items-center justify-center bg-chatz-bg text-center px-8">
       <div className="w-24 h-24 rounded-full bg-chatz-gradient-soft flex items-center justify-center mb-6">
         <ChatBigIcon />
       </div>
-      <h2 className="text-xl font-display font-bold text-chatz-text mb-2">
-        Bem-vindo ao chatZ
-      </h2>
-      <p className="text-sm text-chatz-text-muted max-w-sm">
-        Selecione uma conversa à esquerda para começar a atender.
-      </p>
+      <h2 className="text-xl font-display font-bold text-chatz-text mb-2">Bem-vindo ao chatZ</h2>
+      <p className="text-sm text-chatz-text-muted max-w-sm">Selecione uma conversa à esquerda para começar a atender.</p>
     </div>
   );
 }
 
-// ==========================
-// HELPERS
-// ==========================
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// ==========================
-// ÍCONES
-// ==========================
 function InfoIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 16v-4" />
-      <path d="M12 8h.01" />
-    </svg>
-  );
+  return (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>);
 }
-
 function SendIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m22 2-7 20-4-9-9-4Z" />
-      <path d="M22 2 11 13" />
-    </svg>
-  );
+  return (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" /></svg>);
 }
-
 function PaperclipIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-    </svg>
-  );
+  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>);
 }
-
 function CloseSmallIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="18" x2="6" y1="6" y2="18" />
-      <line x1="6" x2="18" y1="6" y2="18" />
-    </svg>
-  );
+  return (<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" x2="6" y1="6" y2="18" /><line x1="6" x2="18" y1="6" y2="18" /></svg>);
 }
-
 function FilePendingIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-chatz-primary">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-    </svg>
-  );
+  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-chatz-primary"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>);
 }
-
 function ChatBigIcon() {
-  return (
-    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#A855F7" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </svg>
-  );
+  return (<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#A855F7" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>);
 }
