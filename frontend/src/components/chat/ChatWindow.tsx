@@ -21,11 +21,16 @@ interface PendingFile {
   error?: string;
 }
 
+interface TypingUser {
+  userId: string;
+  userName: string;
+  userRole: string;
+}
+
 export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   const { id } = useParams<{ id: string }>();
   const user = useAuthStore((s) => s.user);
-  const { messages, fetchMessages, sendMessage, addMessage, clear } =
-    useMessagesStore();
+  const { messages, fetchMessages, addMessage, clear } = useMessagesStore();
   const assignTicket = useTicketsStore((s) => s.assignTicket);
 
   const [ticket, setTicket] = useState<Ticket | null>(null);
@@ -33,12 +38,15 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [assigning, setAssigning] = useState(false);
-
-  // Múltiplos arquivos
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
-
-  // Drag & drop
   const [dragging, setDragging] = useState(false);
+
+  // Typing
+  const [typingUsers, setTypingUsers] = useState<Map<string, TypingUser>>(
+    new Map()
+  );
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isTypingRef = useRef(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -64,7 +72,9 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     return () => clear();
   }, [id, fetchMessages, clear]);
 
-  // Socket.IO
+  // ==========================
+  // SOCKET.IO
+  // ==========================
   useEffect(() => {
     if (!id) return;
     const socket = getSocket();
@@ -80,38 +90,110 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     function handleNew(msg: Message) {
       if (msg.ticketId === id) addMessage(msg);
     }
+
     function handleUpdated(updated: Ticket) {
       if (updated.id === id)
         setTicket((prev) => (prev ? { ...prev, ...updated } : updated));
     }
 
+    // Typing
+    function handleTypingUpdate(data: {
+      ticketId: string;
+      userId: string;
+      userName: string;
+      userRole: string;
+      typing: boolean;
+    }) {
+      if (data.ticketId !== id) return;
+      // Ignora a si mesmo
+      if (data.userId === user?.id) return;
+
+      setTypingUsers((prev) => {
+        const next = new Map(prev);
+        if (data.typing) {
+          next.set(data.userId, {
+            userId: data.userId,
+            userName: data.userName,
+            userRole: data.userRole,
+          });
+        } else {
+          next.delete(data.userId);
+        }
+        return next;
+      });
+    }
+
     socket.on('message:new', handleNew);
     socket.on('ticket:updated', handleUpdated);
+    socket.on('typing:update', handleTypingUpdate);
 
     return () => {
       socket.emit('ticket:leave', id);
       socket.off('connect', join);
       socket.off('message:new', handleNew);
       socket.off('ticket:updated', handleUpdated);
+      socket.off('typing:update', handleTypingUpdate);
+      // Limpa typing quando sai
+      if (isTypingRef.current) {
+        socket.emit('typing:stop', { ticketId: id });
+      }
     };
-  }, [id, addMessage]);
+  }, [id, addMessage, user?.id]);
 
+  // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, pendingFiles]);
+  }, [messages, pendingFiles, typingUsers]);
 
   useEffect(() => {
     if (id) inputRef.current?.focus();
   }, [id]);
 
   // ==========================
-  // ADICIONAR ARQUIVOS (upload imediato em background)
+  // TYPING — emit start/stop
+  // ==========================
+  function handleInputChange(value: string) {
+    setInput(value);
+
+    const socket = getSocket();
+    if (!socket || !id) return;
+
+    // Se tiver texto, emite start (uma vez só)
+    if (value.trim() && !isTypingRef.current) {
+      socket.emit('typing:start', { ticketId: id });
+      isTypingRef.current = true;
+    }
+
+    // Limpa timeout anterior
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    // Se vazio, emite stop imediato
+    if (!value.trim()) {
+      if (isTypingRef.current) {
+        socket.emit('typing:stop', { ticketId: id });
+        isTypingRef.current = false;
+      }
+      return;
+    }
+
+    // Se ficar 3s sem digitar, emite stop
+    typingTimeoutRef.current = setTimeout(() => {
+      if (isTypingRef.current) {
+        socket.emit('typing:stop', { ticketId: id });
+        isTypingRef.current = false;
+      }
+    }, 3000);
+  }
+
+  // ==========================
+  // ARQUIVOS
   // ==========================
   function addFiles(files: File[]) {
     const validFiles = files.filter((f) => f.size > 0);
     if (validFiles.length === 0) return;
 
-    // Cria pendentes
     const newPending: PendingFile[] = validFiles.map((file) => ({
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       file,
@@ -121,7 +203,6 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
 
     setPendingFiles((prev) => [...prev, ...newPending]);
 
-    // Faz upload em paralelo
     newPending.forEach((pending) => {
       const formData = new FormData();
       formData.append('file', pending.file);
@@ -175,17 +256,13 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   function handleDragLeave(e: React.DragEvent) {
     e.preventDefault();
     e.stopPropagation();
-    // Só remove o dragging se saiu do container inteiro
-    if (e.currentTarget === e.target) {
-      setDragging(false);
-    }
+    if (e.currentTarget === e.target) setDragging(false);
   }
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     e.stopPropagation();
     setDragging(false);
-
     const files = Array.from(e.dataTransfer.files || []);
     if (files.length > 0) addFiles(files);
   }
@@ -218,29 +295,33 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     setInput('');
     setPendingFiles([]);
 
+    // Para o typing ao enviar
+    const socket = getSocket();
+    if (socket && isTypingRef.current) {
+      socket.emit('typing:stop', { ticketId: id });
+      isTypingRef.current = false;
+    }
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+
     try {
-      // ==========================
-      // Se tem arquivos, envia cada um como mensagem própria
-      // ==========================
       if (readyFiles.length > 0) {
         for (let i = 0; i < readyFiles.length; i++) {
           const file = readyFiles[i];
-          // Só a primeira mensagem leva o texto como caption
           const msgContent = i === 0 ? content : '';
-
           await api.post(`/tickets/${id}/messages`, {
             content: msgContent,
             attachment: file.preview,
           });
         }
       } else if (content) {
-        // Só texto
         await api.post(`/tickets/${id}/messages`, { content });
       }
     } catch (err) {
       alert(getErrorMessage(err));
       if (content) setInput(content);
-      // Devolve os arquivos pendentes se falhar
       setPendingFiles(readyFiles);
     } finally {
       setSending(false);
@@ -291,10 +372,20 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     .toUpperCase();
 
   const hasText = input.trim().length > 0;
-  const hasFiles = pendingFiles.length > 0;
   const hasUploading = pendingFiles.some((p) => p.uploading);
   const canSubmit =
-    !sending && !hasUploading && (hasText || pendingFiles.some((p) => p.preview));
+    !sending &&
+    !hasUploading &&
+    (hasText || pendingFiles.some((p) => p.preview));
+
+  // Texto do typing
+  const typingNames = Array.from(typingUsers.values()).map((t) => t.userName);
+  const typingText =
+    typingNames.length === 0
+      ? null
+      : typingNames.length === 1
+      ? `${typingNames[0]} está digitando...`
+      : `${typingNames.slice(0, 2).join(', ')} estão digitando...`;
 
   return (
     <div
@@ -303,7 +394,6 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       onDragLeave={canSend ? handleDragLeave : undefined}
       onDrop={canSend ? handleDrop : undefined}
     >
-      {/* Overlay de drag */}
       {dragging && canSend && (
         <div className="absolute inset-0 z-40 bg-chatz-primary/10 border-4 border-dashed border-chatz-primary rounded-lg
                         flex items-center justify-center pointer-events-none">
@@ -329,7 +419,11 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
               {ticket.client.name}
             </p>
             <p className="text-xs text-chatz-text-muted truncate">
-              {ticket.client.phone} · #{ticket.id.slice(0, 8)}
+              {typingText ? (
+                <span className="text-chatz-primary italic">{typingText}</span>
+              ) : (
+                `${ticket.client.phone} · #${ticket.id.slice(0, 8)}`
+              )}
             </p>
           </div>
         </button>
@@ -384,6 +478,23 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
             );
           })}
         </div>
+
+        {/* Indicador de typing embaixo */}
+        {typingText && (
+          <div className="flex items-center gap-2 mt-3 animate-fade-in">
+            <div className="bg-chatz-surface border border-chatz-border rounded-2xl rounded-bl-sm px-3 py-2">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-chatz-text-muted">{typingText}</span>
+                <span className="flex gap-0.5">
+                  <span className="w-1 h-1 bg-chatz-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-1 h-1 bg-chatz-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1 h-1 bg-chatz-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 
@@ -391,7 +502,6 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       <footer className="border-t border-chatz-border bg-chatz-surface shrink-0">
         {canSend ? (
           <>
-            {/* Preview múltiplos arquivos */}
             {pendingFiles.length > 0 && (
               <div className="px-3 pt-3">
                 <div className="flex items-center justify-between mb-2">
@@ -447,7 +557,6 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
                         className="w-5 h-5 rounded-full flex items-center justify-center
                                    text-chatz-text-muted hover:bg-chatz-danger-light hover:text-chatz-danger
                                    transition-all shrink-0"
-                        title="Remover"
                       >
                         <CloseSmallIcon />
                       </button>
@@ -480,7 +589,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
                 ref={inputRef}
                 type="text"
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => handleInputChange(e.target.value)}
                 placeholder={
                   pendingFiles.length > 0
                     ? 'Legenda (opcional, vai no primeiro arquivo)'
@@ -524,7 +633,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
 }
 
 // ==========================
-// BOLHA DE MENSAGEM
+// BOLHA
 // ==========================
 function MessageBubble({
   message,
@@ -539,7 +648,6 @@ function MessageBubble({
     hour: '2-digit',
     minute: '2-digit',
   });
-
   const attachment = (message as any).attachment as Attachment | null;
   const hasContent = message.content?.trim().length > 0;
 
@@ -557,19 +665,16 @@ function MessageBubble({
             {message.sender.name}
           </p>
         )}
-
         {attachment && (
           <div className={hasContent ? 'mb-2' : ''}>
             <AttachmentPreview attachment={attachment} isMine={isMine} />
           </div>
         )}
-
         {hasContent && (
           <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
             {message.content}
           </p>
         )}
-
         <p
           className={`text-[10px] mt-1 text-right px-1 ${
             isMine ? 'text-white/70' : 'text-chatz-text-subtle'

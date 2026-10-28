@@ -6,7 +6,7 @@ import { prisma } from '../config/prisma';
 let io: Server | null = null;
 
 // ==========================
-// INICIALIZAR SOCKET.IO
+// INICIALIZAR
 // ==========================
 export function initSocketServer(httpServer: HttpServer) {
   io = new Server(httpServer, {
@@ -20,38 +20,26 @@ export function initSocketServer(httpServer: HttpServer) {
     },
   });
 
-  // ==========================
-  // AUTENTICAÇÃO NO HANDSHAKE
-  // ==========================
   io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth?.token;
-
-      if (!token) {
-        return next(new Error('Token não fornecido'));
-      }
+      if (!token) return next(new Error('Token não fornecido'));
 
       const payload = verifyToken(token);
-
       const user = await prisma.user.findUnique({
         where: { id: payload.sub },
         select: { id: true, name: true, role: true, sectorId: true, active: true },
       });
 
-      if (!user || !user.active) {
-        return next(new Error('Usuário inativo ou não encontrado'));
-      }
+      if (!user || !user.active) return next(new Error('Usuário inativo'));
 
       socket.data.user = user;
       next();
     } catch {
-      next(new Error('Token inválido ou expirado'));
+      next(new Error('Token inválido'));
     }
   });
 
-  // ==========================
-  // CONEXÃO
-  // ==========================
   io.on('connection', (socket: Socket) => {
     const user = socket.data.user as {
       id: string;
@@ -62,16 +50,13 @@ export function initSocketServer(httpServer: HttpServer) {
 
     console.log(`🔌 Conectado: ${user.name} (${user.role})`);
 
-    // Sala pessoal (notificações específicas)
     socket.join(`user:${user.id}`);
 
-    // Sala do setor (só pra AGENT)
     if (user.role === 'AGENT' && user.sectorId) {
       socket.join(`sector:${user.sectorId}`);
       console.log(`   └─ Entrou na sala sector:${user.sectorId}`);
     }
 
-    // ADMIN entra em todas as salas de setor
     if (user.role === 'ADMIN') {
       prisma.sector
         .findMany({ where: { active: true }, select: { id: true } })
@@ -81,14 +66,10 @@ export function initSocketServer(httpServer: HttpServer) {
         });
     }
 
-    // ==========================
-    // ENTRAR NA SALA DE UM TICKET (chat)
-    // ==========================
+    // Ticket rooms
     socket.on('ticket:join', (ticketId: string) => {
       socket.join(`ticket:${ticketId}`);
       console.log(`   └─ ${user.name} entrou na sala ticket:${ticketId}`);
-
-      // Confirma pro cliente que entrou
       socket.emit('ticket:joined', { ticketId });
     });
 
@@ -98,8 +79,31 @@ export function initSocketServer(httpServer: HttpServer) {
     });
 
     // ==========================
-    // DESCONEXÃO
+    // TYPING INDICATOR
     // ==========================
+    socket.on('typing:start', (data: { ticketId: string }) => {
+      if (!data?.ticketId) return;
+      // Repassa pra sala do ticket (menos pra ele mesmo)
+      socket.to(`ticket:${data.ticketId}`).emit('typing:update', {
+        ticketId: data.ticketId,
+        userId: user.id,
+        userName: user.name,
+        userRole: user.role,
+        typing: true,
+      });
+    });
+
+    socket.on('typing:stop', (data: { ticketId: string }) => {
+      if (!data?.ticketId) return;
+      socket.to(`ticket:${data.ticketId}`).emit('typing:update', {
+        ticketId: data.ticketId,
+        userId: user.id,
+        userName: user.name,
+        userRole: user.role,
+        typing: false,
+      });
+    });
+
     socket.on('disconnect', () => {
       console.log(`🔌 Desconectado: ${user.name}`);
     });
@@ -110,42 +114,34 @@ export function initSocketServer(httpServer: HttpServer) {
 }
 
 // ==========================
-// HELPERS DE EMISSÃO
+// HELPERS
 // ==========================
 export function getIO(): Server {
-  if (!io) {
-    throw new Error('Socket.IO não foi inicializado');
-  }
+  if (!io) throw new Error('Socket.IO não inicializado');
   return io;
 }
 
-// Emitir pra sala de um setor
 export function emitToSector(sectorId: string, event: string, data: any) {
   if (!io) return;
   io.to(`sector:${sectorId}`).emit(event, data);
   console.log(`📡 emitToSector → sector:${sectorId} → ${event}`);
 }
 
-// Emitir pra um usuário específico
 export function emitToUser(userId: string, event: string, data: any) {
   if (!io) return;
   io.to(`user:${userId}`).emit(event, data);
   console.log(`📡 emitToUser → user:${userId} → ${event}`);
 }
 
-// Emitir pra um ticket (chat)
 export function emitToTicket(ticketId: string, event: string, data: any) {
   if (!io) {
-    console.warn('⚠️ Socket.IO não inicializado — emit ignorado');
+    console.warn('⚠️ Socket.IO não inicializado');
     return;
   }
-
   const room = `ticket:${ticketId}`;
-  const socketsInRoom = io.sockets.adapter.rooms.get(room);
-
+  const sockets = io.sockets.adapter.rooms.get(room);
   console.log(
-    `📡 emitToTicket → ${room} → ${event} (${socketsInRoom?.size ?? 0} clientes na sala)`
+    `📡 emitToTicket → ${room} → ${event} (${sockets?.size ?? 0} clientes)`
   );
-
   io.to(room).emit(event, data);
 }
