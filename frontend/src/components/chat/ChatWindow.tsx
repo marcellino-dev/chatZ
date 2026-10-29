@@ -484,12 +484,12 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
         )}
         <div className="space-y-2">
           {messages.map((msg) => {
-            const isMineMsg = msg.senderId === user?.id;
+            const isAgentMessage = msg.sender.role !== 'CLIENT';
             return (
               <MessageBubble
                 key={msg.id}
                 message={msg}
-                isMine={isMineMsg}
+                isAgent={isAgentMessage}
               />
             );
           })}
@@ -662,30 +662,30 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   );
 }
 
-function MessageBubble({ message, isMine }: { message: Message; isMine: boolean }) {
+function MessageBubble({ message, isAgent }: { message: Message; isAgent: boolean }) {
   const time = new Date(message.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const attachment = (message as any).attachment as Attachment | null;
   const hasContent = message.content?.trim().length > 0;
 
   return (
-    <div className={`flex ${isMine ? 'justify-end' : 'justify-start'} animate-fade-in`}>
-      <div className={`max-w-[70%] rounded-2xl ${isMine ? 'bg-chatz-button-gradient text-white rounded-br-sm shadow-[0_2px_8px_rgba(236,72,153,0.20)]' : 'bg-chatz-surface border border-chatz-border text-chatz-text rounded-bl-sm'} ${attachment && !hasContent ? 'p-2' : 'px-3.5 py-2'}`}>
+    <div className={`flex ${isAgent ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+      <div className={`max-w-[70%] rounded-2xl ${isAgent ? 'bg-chatz-button-gradient text-white rounded-br-sm shadow-[0_2px_8px_rgba(236,72,153,0.20)]' : 'bg-chatz-surface border border-chatz-border text-chatz-text rounded-bl-sm'} ${attachment && !hasContent ? 'p-2' : 'px-3.5 py-2'}`}>
         <p
           className={`text-xs font-semibold mb-0.5 px-1.5 pt-0.5 ${
-            isMine ? 'text-white/80' : 'text-chatz-purple'
+            isAgent ? 'text-white/80' : 'text-chatz-purple'
           }`}
         >
           {message.sender.name}
         </p>
         {attachment && (
           <div className={hasContent ? 'mb-2' : ''}>
-            <AttachmentPreview attachment={attachment} isMine={isMine} />
+            <AttachmentPreview attachment={attachment} isMine={isAgent} />
           </div>
         )}
         {hasContent && (
           <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
         )}
-        <p className={`text-[10px] mt-1 text-right px-1 ${isMine ? 'text-white/70' : 'text-chatz-text-subtle'}`}>{time}</p>
+        <p className={`text-[10px] mt-1 text-right px-1 ${isAgent ? 'text-white/70' : 'text-chatz-text-subtle'}`}>{time}</p>
       </div>
     </div>
   );

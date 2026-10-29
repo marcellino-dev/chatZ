@@ -204,7 +204,7 @@ export function TicketDetail() {
         )}
         <div className="space-y-3">
           {messages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} currentUserId={user?.id} />
+            <MessageBubble key={msg.id} message={msg} />
           ))}
         </div>
         <div ref={messagesEndRef} />
@@ -260,23 +260,19 @@ export function TicketDetail() {
 
 function MessageBubble({
   message,
-  currentUserId,
 }: {
   message: Message;
-  currentUserId?: string;
 }) {
-  const isMine = message.senderId === currentUserId;
   const isClient = message.sender.role === 'CLIENT';
+  const isAgent = !isClient;
 
   return (
-    <div className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+    <div className={`flex ${isAgent ? 'justify-end' : 'justify-start'}`}>
       <div
         className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
-          isMine
+          isAgent
             ? 'bg-chatz-primary text-white'
-            : isClient
-            ? 'bg-chatz-card border border-chatz-border text-chatz-text'
-            : 'bg-chatz-card-hover border border-chatz-border text-chatz-text'
+            : 'bg-chatz-card border border-chatz-border text-chatz-text'
         }`}
       >
         <p className="text-xs font-medium mb-1 opacity-75">
@@ -285,7 +281,7 @@ function MessageBubble({
         <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
         <p
           className={`text-[10px] mt-1 ${
-            isMine ? 'text-white/70' : 'text-chatz-muted'
+            isAgent ? 'text-white/70' : 'text-chatz-muted'
           }`}
         >
           {new Date(message.createdAt).toLocaleTimeString('pt-BR', {
