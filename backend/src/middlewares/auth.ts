@@ -33,29 +33,30 @@ export async function authMiddleware(
     return res.status(401).json({ error: 'Formato de token inválido' });
   }
 
+  let payload: ReturnType<typeof verifyToken>;
   try {
-    const payload = verifyToken(token);
-
-    // Busca dados atuais do usuário (sectorId pode ter mudado)
-    const user = await prisma.user.findUnique({
-      where: { id: payload.sub },
-      select: { id: true, role: true, sectorId: true, active: true },
-    });
-
-    if (!user || !user.active) {
-      return res.status(401).json({ error: 'Usuário inativo ou não encontrado' });
-    }
-
-    req.user = {
-      id: user.id,
-      role: user.role,
-      sectorId: user.sectorId,
-    };
-
-    return next();
+    payload = verifyToken(token);
   } catch {
     return res.status(401).json({ error: 'Token inválido ou expirado' });
   }
+
+  // Busca dados atuais do usuário (sectorId pode ter mudado)
+  const user = await prisma.user.findUnique({
+    where: { id: payload.sub },
+    select: { id: true, role: true, sectorId: true, active: true },
+  });
+
+  if (!user || !user.active) {
+    return res.status(401).json({ error: 'Usuário inativo ou não encontrado' });
+  }
+
+  req.user = {
+    id: user.id,
+    role: user.role,
+    sectorId: user.sectorId,
+  };
+
+  return next();
 }
 
 export function requireRole(...roles: string[]) {

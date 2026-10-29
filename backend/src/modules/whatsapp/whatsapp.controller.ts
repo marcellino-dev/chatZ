@@ -71,7 +71,7 @@ export async function webhook(req: Request, res: Response) {
     return res.status(200).json({ ok: true });
   } catch (err) {
     console.error('❌ Erro no webhook:', err);
-    return res.status(200).json({ ok: false, error: String(err) });
+    return res.status(500).json({ ok: false, error: 'Falha ao processar webhook' });
   }
 }
 

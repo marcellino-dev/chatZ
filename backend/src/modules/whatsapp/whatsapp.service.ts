@@ -69,7 +69,11 @@ export async function sendWhatsAppMessage({ phone, text }: SendTextOptions) {
     }
 
     const data = await response.json();
-    console.log(`   ✅ Enviado (id: ${data.key?.id})`);
+    const messageId =
+      isRecord(data) && isRecord(data.key) && typeof data.key.id === 'string'
+        ? data.key.id
+        : undefined;
+    console.log(`   ✅ Enviado (id: ${messageId ?? 'não informado'})`);
     return data;
   } catch (err) {
     console.error('   ❌ Erro ao enviar texto:', err);
@@ -135,7 +139,11 @@ export async function sendWhatsAppMedia({
     }
 
     const data = await response.json();
-    console.log(`   ✅ Mídia enviada (id: ${data.key?.id})`);
+    const messageId =
+      isRecord(data) && isRecord(data.key) && typeof data.key.id === 'string'
+        ? data.key.id
+        : undefined;
+    console.log(`   ✅ Mídia enviada (id: ${messageId ?? 'não informado'})`);
     return data;
   } catch (err) {
     console.error('   ❌ Erro ao enviar mídia:', err);
@@ -197,15 +205,18 @@ export async function downloadMediaFromWhatsApp(
       return null;
     }
 
-    const data = await response.json();
+    const data: unknown = await response.json();
 
-    if (!data.base64) {
+    if (!isRecord(data) || typeof data.base64 !== 'string' || !data.base64) {
       console.error('   ❌ Resposta sem base64');
       return null;
     }
 
     // Extrai mimetype
-    const mimetype = data.mimetype || getMimetypeFromMessageType(messageType);
+    const mimetype =
+      typeof data.mimetype === 'string'
+        ? data.mimetype
+        : getMimetypeFromMessageType(messageType);
     const originalName = extractOriginalName(messageObj, messageType);
     const extension = extensionFromMimetype(mimetype, messageType);
 
@@ -267,6 +278,10 @@ function normalizePhone(phone: string): string {
     return `55${digits}`;
   }
   return digits;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function detectMediaType(

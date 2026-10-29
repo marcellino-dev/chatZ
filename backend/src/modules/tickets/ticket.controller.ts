@@ -7,6 +7,7 @@ import {
   listTicketsSchema,
   addParticipantSchema,
 } from './ticket.schemas';
+import { getRouteParam } from '../../utils/routeParams';
 
 export async function create(req: Request, res: Response, next: NextFunction) {
   try {
@@ -30,7 +31,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 
 export async function getById(req: Request, res: Response, next: NextFunction) {
   try {
-    const ticket = await ticketService.getTicketById(req.user!, req.params.id);
+    const ticket = await ticketService.getTicketById(req.user!, getRouteParam(req, 'id'));
     return res.json(ticket);
   } catch (err) {
     return next(err);
@@ -39,7 +40,7 @@ export async function getById(req: Request, res: Response, next: NextFunction) {
 
 export async function assign(req: Request, res: Response, next: NextFunction) {
   try {
-    const ticket = await ticketService.assignTicket(req.user!, req.params.id);
+    const ticket = await ticketService.assignTicket(req.user!, getRouteParam(req, 'id'));
     return res.json(ticket);
   } catch (err) {
     return next(err);
@@ -49,7 +50,7 @@ export async function assign(req: Request, res: Response, next: NextFunction) {
 export async function updateStatus(req: Request, res: Response, next: NextFunction) {
   try {
     const data = updateStatusSchema.parse(req.body);
-    const ticket = await ticketService.updateStatus(req.user!, req.params.id, data);
+    const ticket = await ticketService.updateStatus(req.user!, getRouteParam(req, 'id'), data);
     return res.json(ticket);
   } catch (err) {
     return next(err);
@@ -59,7 +60,7 @@ export async function updateStatus(req: Request, res: Response, next: NextFuncti
 export async function updatePriority(req: Request, res: Response, next: NextFunction) {
   try {
     const data = updatePrioritySchema.parse(req.body);
-    const ticket = await ticketService.updatePriority(req.user!, req.params.id, data);
+    const ticket = await ticketService.updatePriority(req.user!, getRouteParam(req, 'id'), data);
     return res.json(ticket);
   } catch (err) {
     return next(err);
@@ -71,7 +72,7 @@ export async function addParticipant(req: Request, res: Response, next: NextFunc
     const { userId } = addParticipantSchema.parse(req.body);
     const participant = await ticketService.addParticipant(
       req.user!,
-      req.params.id,
+      getRouteParam(req, 'id'),
       userId
     );
     return res.status(201).json(participant);
@@ -84,8 +85,8 @@ export async function removeParticipant(req: Request, res: Response, next: NextF
   try {
     const result = await ticketService.removeParticipant(
       req.user!,
-      req.params.id,
-      req.params.userId
+      getRouteParam(req, 'id'),
+      getRouteParam(req, 'userId')
     );
     return res.json(result);
   } catch (err) {
@@ -95,7 +96,10 @@ export async function removeParticipant(req: Request, res: Response, next: NextF
 
 export async function listParticipants(req: Request, res: Response, next: NextFunction) {
   try {
-    const participants = await ticketService.listParticipants(req.user!, req.params.id);
+    const participants = await ticketService.listParticipants(
+      req.user!,
+      getRouteParam(req, 'id')
+    );
     return res.json(participants);
   } catch (err) {
     return next(err);

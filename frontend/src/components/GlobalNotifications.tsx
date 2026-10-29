@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { getSocket } from '../lib/socket';
 import { useAuthStore } from '../stores/auth';
@@ -17,7 +17,10 @@ interface MessageNewPayload {
   ticketId: string;
   senderId: string;
   content?: string;
-  attachment?: any;
+  attachment?: {
+    type: 'image' | 'video' | 'audio' | 'document';
+    originalName?: string;
+  };
   sender: { id: string; name: string; role: string };
 }
 
@@ -54,22 +57,23 @@ export function GlobalNotifications() {
   }
 
   // 🔥 Recarrega lista de tickets (chamado em eventos de ticket)
-  async function reloadTickets() {
+  const reloadTickets = useCallback(async () => {
     console.log('🔄 [GlobalNotifications] Recarregando lista de tickets');
     try {
       await fetchTickets({});
     } catch (err) {
       console.error('Erro ao recarregar tickets:', err);
     }
-  }
+  }, [fetchTickets]);
 
   useEffect(() => {
-    if (!isAuthenticated || !user) {
+    const userId = user?.id;
+    if (!isAuthenticated || !userId) {
       console.log('🛑 [GlobalNotifications] User não autenticado');
       return;
     }
 
-    console.log('🎬 [GlobalNotifications] Registrando listeners pro user:', user.id);
+    console.log('🎬 [GlobalNotifications] Registrando listeners pro user:', userId);
 
     function getCurrentSocket() {
       return getSocket();
@@ -114,7 +118,7 @@ export function GlobalNotifications() {
       const s = useSettingsStore.getState();
       if (!s.notificationsEnabled) return;
       if (!s.messageNotifications) return;
-      if (msg.senderId === user?.id) return;
+      if (msg.senderId === userId) return;
 
       const currentPath = pathnameRef.current;
       const activeTicket = getActiveTicketIdFromPath(currentPath);
@@ -221,7 +225,7 @@ export function GlobalNotifications() {
       await reloadTickets();
     }
 
-    async function handleTicketUpdated(ticket: any) {
+    async function handleTicketUpdated() {
       // 🔥 Recarrega a lista quando ticket atualiza (status/agent)
       await reloadTickets();
     }
@@ -274,7 +278,7 @@ export function GlobalNotifications() {
         socket.off('connect', handleConnect);
       }
     };
-  }, [isAuthenticated, user?.id, navigate, fetchTickets]);
+  }, [isAuthenticated, user?.id, navigate, reloadTickets]);
 
   return null;
 }

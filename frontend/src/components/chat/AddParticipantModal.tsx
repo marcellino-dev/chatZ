@@ -1,4 +1,4 @@
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { api, getErrorMessage } from '../../lib/api';
 import type { User, Sector, TicketParticipant } from '../../types';
 
@@ -198,7 +198,7 @@ export function AddParticipantModal({
             </select>
 
             {/* Debug */}
-            {process.env.NODE_ENV === 'development' && !loadingAgents && (
+            {import.meta.env.DEV && !loadingAgents && (
               <p className="text-[10px] text-chatz-text-subtle mt-1">
                 {agents.length} atendente(s) no setor · {availableAgents.length} disponível(is)
               </p>

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as botController from './bot.controller';
+import { env } from '../../config/env';
 
 const router = Router();
 
@@ -10,6 +11,8 @@ const router = Router();
 // - POST /bot/webhook  → Evolution API chama
 // - POST /bot/simulate → só pra DEV
 
-router.post('/simulate', botController.simulate);
+if (env.NODE_ENV !== 'production') {
+  router.post('/simulate', botController.simulate);
+}
 
 export default router;

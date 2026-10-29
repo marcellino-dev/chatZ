@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import * as sectorService from './sector.service';
 import { createSectorSchema, updateSectorSchema } from './sector.schemas';
+import { getRouteParam } from '../../utils/routeParams';
 
 // ==========================
 // LISTAR
@@ -29,7 +30,7 @@ export async function getById(
   next: NextFunction
 ) {
   try {
-    const sector = await sectorService.getSectorById(req.params.id);
+    const sector = await sectorService.getSectorById(getRouteParam(req, 'id'));
     return res.json(sector);
   } catch (err) {
     return next(err);
@@ -63,7 +64,7 @@ export async function update(
 ) {
   try {
     const data = updateSectorSchema.parse(req.body);
-    const sector = await sectorService.updateSector(req.params.id, data);
+    const sector = await sectorService.updateSector(getRouteParam(req, 'id'), data);
     return res.json(sector);
   } catch (err) {
     return next(err);
@@ -79,7 +80,7 @@ export async function remove(
   next: NextFunction
 ) {
   try {
-    const sector = await sectorService.deleteSector(req.params.id);
+    const sector = await sectorService.deleteSector(getRouteParam(req, 'id'));
     return res.json(sector);
   } catch (err) {
     return next(err);

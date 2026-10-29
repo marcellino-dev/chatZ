@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import * as authService from './auth.service';
 import { loginSchema, createUserSchema } from './auth.schemas';
+import { getRouteParam } from '../../utils/routeParams';
 
 // ==========================
 // LOGIN
@@ -76,7 +77,7 @@ export async function updateUser(
   next: NextFunction
 ) {
   try {
-    const updated = await authService.updateUser(req.params.id, req.body);
+    const updated = await authService.updateUser(getRouteParam(req, 'id'), req.body);
     return res.json(updated);
   } catch (err) {
     return next(err);
@@ -93,7 +94,7 @@ export async function deleteUser(
 ) {
   try {
     const deleted = await authService.deleteUser(
-      req.params.id,
+      getRouteParam(req, 'id'),
       req.user!.id
     );
     return res.json(deleted);

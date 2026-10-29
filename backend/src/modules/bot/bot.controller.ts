@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import * as botService from './bot.service';
+import { getRouteParam } from '../../utils/routeParams';
 
 const simulateSchema = z.object({
   phone: z.string().min(8, 'Phone muito curto'),
@@ -34,7 +35,7 @@ export async function resetConversation(
   next: NextFunction
 ) {
   try {
-    const { phone } = req.params;
+    const phone = getRouteParam(req, 'phone');
     const normalized = phone.replace(/\D/g, '');
 
     await botService.processMessage({

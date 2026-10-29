@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import * as transferService from './transfer.service';
 import { transferTicketSchema } from './transfer.schemas';
+import { getRouteParam } from '../../utils/routeParams';
 
 export async function transfer(
   req: Request,
@@ -11,7 +12,7 @@ export async function transfer(
     const data = transferTicketSchema.parse(req.body);
     const result = await transferService.transferTicket(
       req.user!,
-      req.params.ticketId,
+      getRouteParam(req, 'ticketId'),
       data
     );
     return res.json(result);
@@ -28,7 +29,7 @@ export async function list(
   try {
     const transfers = await transferService.listTransfers(
       req.user!,
-      req.params.ticketId
+      getRouteParam(req, 'ticketId')
     );
     return res.json(transfers);
   } catch (err) {

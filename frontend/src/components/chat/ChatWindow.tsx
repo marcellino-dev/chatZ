@@ -47,7 +47,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
 
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTypingRef = useRef(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -81,18 +81,19 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     if (!id) return;
     const socket = getSocket();
     if (!socket) return;
+    const activeSocket = socket;
 
     // 🔥 FORÇA JOIN IMEDIATAMENTE
     function join() {
       console.log('📌 [ChatWindow] Entrando na sala ticket:', id);
-      socket.emit('ticket:join', id);
+      activeSocket.emit('ticket:join', id);
     }
 
     // Sempre chama, independente de estar conectado ou não
     join();
 
     // E re-join se reconectar
-    socket.on('connect', join);
+    activeSocket.on('connect', join);
 
     function handleNew(msg: Message) {
       console.log('📩 [ChatWindow] message:new recebida:', msg);
@@ -130,19 +131,19 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       });
     }
 
-    socket.on('message:new', handleNew);
-    socket.on('ticket:updated', handleUpdated);
-    socket.on('typing:update', handleTypingUpdate);
+    activeSocket.on('message:new', handleNew);
+    activeSocket.on('ticket:updated', handleUpdated);
+    activeSocket.on('typing:update', handleTypingUpdate);
 
     return () => {
       console.log('📌 [ChatWindow] Saindo da sala ticket:', id);
-      socket.emit('ticket:leave', id);
-      socket.off('connect', join);
-      socket.off('message:new', handleNew);
-      socket.off('ticket:updated', handleUpdated);
-      socket.off('typing:update', handleTypingUpdate);
+      activeSocket.emit('ticket:leave', id);
+      activeSocket.off('connect', join);
+      activeSocket.off('message:new', handleNew);
+      activeSocket.off('ticket:updated', handleUpdated);
+      activeSocket.off('typing:update', handleTypingUpdate);
       if (isTypingRef.current) {
-        socket.emit('typing:stop', { ticketId: id });
+        activeSocket.emit('typing:stop', { ticketId: id });
       }
     };
   }, [id, addMessage, user?.id]);
