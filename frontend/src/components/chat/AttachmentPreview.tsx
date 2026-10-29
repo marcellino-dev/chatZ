@@ -7,22 +7,35 @@ export interface Attachment {
   mimetype: string;
   size: number;
   type: 'image' | 'video' | 'audio' | 'document';
+  sticker?: boolean;
 }
 
 interface Props {
   attachment: Attachment;
   isMine: boolean;
+  onStickerClick?: () => void;
 }
 
 // ==========================
 // COMPONENTE PRINCIPAL
 // ==========================
-export function AttachmentPreview({ attachment, isMine }: Props) {
+export function AttachmentPreview({
+  attachment,
+  isMine,
+  onStickerClick,
+}: Props) {
   const fullUrl = getFullUrl(attachment.url);
 
   switch (attachment.type) {
     case 'image':
-      return <ImagePreview url={fullUrl} name={attachment.originalName} />;
+      return (
+        <ImagePreview
+          url={fullUrl}
+          name={attachment.originalName}
+          sticker={attachment.sticker}
+          onStickerClick={onStickerClick}
+        />
+      );
     case 'video':
       return <VideoPreview url={fullUrl} />;
     case 'audio':
@@ -44,7 +57,17 @@ export function AttachmentPreview({ attachment, isMine }: Props) {
 // ==========================
 // IMAGEM
 // ==========================
-function ImagePreview({ url, name }: { url: string; name: string }) {
+function ImagePreview({
+  url,
+  name,
+  sticker,
+  onStickerClick,
+}: {
+  url: string;
+  name: string;
+  sticker?: boolean;
+  onStickerClick?: () => void;
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -52,9 +75,30 @@ function ImagePreview({ url, name }: { url: string; name: string }) {
       <img
         src={url}
         alt={name}
-        onClick={() => setOpen(true)}
-        className="max-w-[280px] max-h-[280px] rounded-lg cursor-pointer
-                   hover:opacity-90 transition-opacity object-cover"
+        onClick={() => {
+          if (sticker && onStickerClick) {
+            onStickerClick();
+          } else {
+            setOpen(true);
+          }
+        }}
+        onKeyDown={(event) => {
+          if (
+            sticker &&
+            onStickerClick &&
+            (event.key === 'Enter' || event.key === ' ')
+          ) {
+            event.preventDefault();
+            onStickerClick();
+          }
+        }}
+        role={sticker && onStickerClick ? 'button' : undefined}
+        tabIndex={sticker && onStickerClick ? 0 : undefined}
+        className={`cursor-pointer hover:opacity-90 transition-opacity ${
+          sticker
+            ? 'max-w-[200px] max-h-[200px] object-contain'
+            : 'max-w-[280px] max-h-[280px] rounded-lg object-cover'
+        }`}
         loading="lazy"
       />
 

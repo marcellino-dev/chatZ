@@ -29,6 +29,16 @@ interface TypingUser {
   userRole: string;
 }
 
+interface Sticker {
+  id: string;
+  name: string;
+  url: string;
+  filename: string;
+  mimetype: string;
+  size: number;
+  sourceMessageId?: string | null;
+}
+
 export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   const { id } = useParams<{ id: string }>();
   const user = useAuthStore((s) => s.user);
@@ -47,6 +57,13 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   const [quickReplyError, setQuickReplyError] = useState('');
   const [quickRepliesLoading, setQuickRepliesLoading] = useState(true);
   const [activeQuickReply, setActiveQuickReply] = useState(0);
+  const [stickers, setStickers] = useState<Sticker[]>([]);
+  const [stickersLoading, setStickersLoading] = useState(true);
+  const [stickerUploading, setStickerUploading] = useState(false);
+  const [stickerError, setStickerError] = useState('');
+  const [stickerName, setStickerName] = useState('');
+  const [stickerPickerOpen, setStickerPickerOpen] = useState(false);
+  const [favoriteMenuMessageId, setFavoriteMenuMessageId] = useState<string | null>(null);
 
   const [emojiOpen, setEmojiOpen] = useState(false);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
@@ -58,6 +75,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const stickerInputRef = useRef<HTMLInputElement>(null);
 
   function loadTicket() {
     if (!id) return;
@@ -89,6 +107,33 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       })
       .finally(() => {
         if (active) setQuickRepliesLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || user.role === 'CLIENT') {
+      setStickersLoading(false);
+      return;
+    }
+
+    let active = true;
+    api
+      .get<Sticker[]>('/stickers')
+      .then(({ data }) => {
+        if (active) {
+          setStickers(data);
+          setStickerError('');
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) setStickerError(getErrorMessage(error));
+      })
+      .finally(() => {
+        if (active) setStickersLoading(false);
       });
 
     return () => {
@@ -368,6 +413,111 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     setPendingFiles([]);
   }
 
+  async function handleStickerInputChange(
+    event: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    const name =
+      stickerName.trim() || file.name.replace(/\.[^.]+$/, '').slice(0, 60);
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('file', file);
+    setStickerUploading(true);
+    setStickerError('');
+
+    try {
+      const { data } = await api.post<Sticker>('/stickers', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setStickers((current) => [data, ...current]);
+      setStickerName('');
+    } catch (error) {
+      setStickerError(getErrorMessage(error));
+    } finally {
+      setStickerUploading(false);
+    }
+  }
+
+  async function sendSticker(sticker: Sticker) {
+    if (!id || sending) return;
+
+    setSending(true);
+    try {
+      const { data } = await api.post<Message & { deliveryWarning?: string }>(
+        `/tickets/${id}/messages`,
+        {
+          content: '',
+          attachment: {
+            url: sticker.url,
+            filename: sticker.filename,
+            originalName: sticker.name,
+            mimetype: sticker.mimetype,
+            size: sticker.size,
+            type: 'image',
+            sticker: true,
+          },
+        }
+      );
+      if (data.deliveryWarning) alert(data.deliveryWarning);
+      setStickerPickerOpen(false);
+    } catch (error) {
+      alert(getErrorMessage(error));
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function deleteSticker(sticker: Sticker) {
+    if (!window.confirm(`Excluir a figurinha "${sticker.name}"?`)) return;
+
+    try {
+      await api.delete(`/stickers/${sticker.id}`);
+      setStickers((current) => current.filter((item) => item.id !== sticker.id));
+    } catch (error) {
+      setStickerError(getErrorMessage(error));
+    }
+  }
+
+  async function toggleIncomingStickerFavorite(message: Message) {
+    const savedSticker = stickers.find(
+      (sticker) => sticker.sourceMessageId === message.id
+    );
+    if (savedSticker) {
+      try {
+        await api.delete(`/stickers/${savedSticker.id}`);
+        setStickers((current) =>
+          current.filter((sticker) => sticker.id !== savedSticker.id)
+        );
+      } catch (error) {
+        alert(getErrorMessage(error));
+      }
+      return;
+    }
+
+    const suggestedName =
+      message.attachment?.originalName.replace(/\.[^.]+$/, '') ||
+      'Figurinha do cliente';
+    const name = window.prompt('Nome para salvar a figurinha', suggestedName);
+    if (!name?.trim()) return;
+
+    try {
+      const { data } = await api.post<Sticker>('/stickers/from-message', {
+        messageId: message.id,
+        name: name.trim(),
+      });
+      setStickers((current) =>
+        current.some((sticker) => sticker.id === data.id)
+          ? current
+          : [data, ...current]
+      );
+    } catch (error) {
+      alert(getErrorMessage(error));
+    }
+  }
+
   // Drag
   function handleDragOver(e: React.DragEvent) {
     e.preventDefault();
@@ -427,13 +577,21 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
         for (let i = 0; i < readyFiles.length; i++) {
           const file = readyFiles[i];
           const msgContent = i === 0 ? content : '';
-          await api.post(`/tickets/${id}/messages`, {
-            content: msgContent,
-            attachment: file.preview,
-          });
+          const { data } = await api.post<Message & { deliveryWarning?: string }>(
+            `/tickets/${id}/messages`,
+            {
+              content: msgContent,
+              attachment: file.preview,
+            }
+          );
+          if (data.deliveryWarning) alert(data.deliveryWarning);
         }
       } else if (content) {
-        await api.post(`/tickets/${id}/messages`, { content });
+        const { data } = await api.post<Message & { deliveryWarning?: string }>(
+          `/tickets/${id}/messages`,
+          { content }
+        );
+        if (data.deliveryWarning) alert(data.deliveryWarning);
       }
     } catch (err) {
       alert(getErrorMessage(err));
@@ -576,6 +734,27 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
                 key={msg.id}
                 message={msg}
                 isAgent={isAgentMessage}
+                onFavoriteSticker={
+                  user?.role !== 'CLIENT' &&
+                  msg.sender.role === 'CLIENT' &&
+                  msg.attachment?.sticker
+                    ? () => toggleIncomingStickerFavorite(msg)
+                    : undefined
+                }
+                stickerSaved={stickers.some(
+                  (sticker) => sticker.sourceMessageId === msg.id
+                )}
+                favoriteMenuOpen={favoriteMenuMessageId === msg.id}
+                onStickerClick={
+                  user?.role !== 'CLIENT' &&
+                  msg.sender.role === 'CLIENT' &&
+                  msg.attachment?.sticker
+                    ? () =>
+                        setFavoriteMenuMessageId((current) =>
+                          current === msg.id ? null : msg.id
+                        )
+                    : undefined
+                }
               />
             );
           })}
@@ -664,6 +843,111 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
             )}
 
             <form onSubmit={handleSend} className="p-3 flex items-center gap-2 relative">
+              {stickerPickerOpen && user?.role !== 'CLIENT' && (
+                <div
+                  role="dialog"
+                  aria-label="Minhas figurinhas"
+                  className="absolute bottom-full left-2 mb-2 z-50 w-72
+                             rounded-chatz-xl border border-chatz-border
+                             bg-chatz-surface shadow-chatz-lg p-3"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-sm font-semibold text-chatz-text">
+                      Minhas figurinhas
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setStickerPickerOpen(false)}
+                      aria-label="Fechar figurinhas"
+                      className="text-chatz-text-muted hover:text-chatz-text"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <div className="flex gap-2 mb-3">
+                    <input
+                      type="text"
+                      value={stickerName}
+                      maxLength={60}
+                      onChange={(event) => setStickerName(event.target.value)}
+                      placeholder="Nome da figurinha"
+                      className="min-w-0 flex-1 px-3 py-2 text-xs rounded-chatz
+                                 border border-chatz-border bg-chatz-surface-alt
+                                 text-chatz-text"
+                    />
+                    <input
+                      ref={stickerInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={handleStickerInputChange}
+                    />
+                    <button
+                      type="button"
+                      disabled={stickerUploading}
+                      onClick={() => stickerInputRef.current?.click()}
+                      className="px-3 py-2 rounded-chatz text-xs font-semibold
+                                 bg-chatz-primary text-white disabled:opacity-50"
+                    >
+                      {stickerUploading ? 'Salvando...' : 'Criar'}
+                    </button>
+                  </div>
+                  {stickerError && (
+                    <p role="alert" className="mb-2 text-xs text-chatz-danger">
+                      {stickerError}
+                    </p>
+                  )}
+                  {stickersLoading ? (
+                    <p className="py-4 text-center text-xs text-chatz-text-muted">
+                      Carregando figurinhas...
+                    </p>
+                  ) : stickers.length > 0 ? (
+                    <div className="grid grid-cols-3 gap-2 max-h-52 overflow-y-auto">
+                      {stickers.map((sticker) => (
+                        <div
+                          key={sticker.id}
+                          className="group relative rounded-chatz border border-chatz-border
+                                     bg-chatz-surface-alt p-1"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => sendSticker(sticker)}
+                            disabled={sending}
+                            title={`Enviar ${sticker.name}`}
+                            className="w-full flex flex-col items-center gap-1
+                                       text-center disabled:opacity-50"
+                          >
+                            <img
+                              src={getStickerUrl(sticker.url)}
+                              alt={sticker.name}
+                              className="w-16 h-16 object-contain"
+                              loading="lazy"
+                            />
+                            <span className="w-full truncate text-[10px] text-chatz-text">
+                              {sticker.name}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Excluir ${sticker.name}`}
+                            onClick={() => deleteSticker(sticker)}
+                            className="absolute right-0 top-0 flex w-5 h-5 rounded-full
+                                       items-center justify-center bg-chatz-danger
+                                       text-white text-xs"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="py-4 text-center text-xs text-chatz-text-muted">
+                      Nenhuma figurinha criada ainda.
+                    </p>
+                  )}
+                </div>
+              )}
+
               {emojiOpen && (
                 <div
                   ref={emojiPickerRef}
@@ -693,11 +977,35 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
                 <PaperclipIcon />
               </button>
 
+              {user?.role !== 'CLIENT' && (
+                <button
+                  type="button"
+                  title="Minhas figurinhas"
+                  aria-label="Abrir minhas figurinhas"
+                  aria-expanded={stickerPickerOpen}
+                  onClick={() => {
+                    setStickerPickerOpen((open) => !open);
+                    setEmojiOpen(false);
+                  }}
+                  className={`w-10 h-10 rounded-chatz flex items-center justify-center
+                              transition-all ${
+                                stickerPickerOpen
+                                  ? 'bg-chatz-primary-light text-chatz-primary'
+                                  : 'text-chatz-text-muted hover:bg-chatz-surface-hover'
+                              }`}
+                >
+                  <StickerIcon />
+                </button>
+              )}
+
               <button
                 type="button"
                 ref={emojiButtonRef}
                 title="Emoji"
-                onClick={() => setEmojiOpen((v) => !v)}
+                onClick={() => {
+                  setEmojiOpen((v) => !v);
+                  setStickerPickerOpen(false);
+                }}
                 className={`w-10 h-10 rounded-chatz flex items-center justify-center transition-all ${
                   emojiOpen
                     ? 'bg-chatz-primary-light text-chatz-primary'
@@ -794,9 +1102,23 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   );
 }
 
-function MessageBubble({ message, isAgent }: { message: Message; isAgent: boolean }) {
+function MessageBubble({
+  message,
+  isAgent,
+  onFavoriteSticker,
+  stickerSaved,
+  favoriteMenuOpen,
+  onStickerClick,
+}: {
+  message: Message;
+  isAgent: boolean;
+  onFavoriteSticker?: () => void;
+  stickerSaved: boolean;
+  favoriteMenuOpen: boolean;
+  onStickerClick?: () => void;
+}) {
   const time = new Date(message.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  const attachment = (message as any).attachment as Attachment | null;
+  const attachment = message.attachment;
   const hasContent = message.content?.trim().length > 0;
 
   return (
@@ -824,7 +1146,32 @@ function MessageBubble({ message, isAgent }: { message: Message; isAgent: boolea
         )}
         {attachment && (
           <div className={hasContent ? 'mb-2' : ''}>
-            <AttachmentPreview attachment={attachment} isMine={isAgent} />
+            <div className="relative">
+              <AttachmentPreview
+                attachment={attachment}
+                isMine={isAgent}
+                onStickerClick={onStickerClick}
+              />
+              {onFavoriteSticker && favoriteMenuOpen && (
+                <div
+                  className="absolute left-1/2 top-full z-30 mt-1 -translate-x-1/2
+                             rounded-full border border-chatz-border bg-chatz-surface
+                             p-1 shadow-chatz-lg"
+                >
+                  <button
+                    type="button"
+                    onClick={onFavoriteSticker}
+                    className="whitespace-nowrap rounded-full px-3 py-1.5
+                               text-xs font-medium text-chatz-text
+                               hover:bg-chatz-surface-hover"
+                  >
+                    {stickerSaved
+                      ? 'Remover dos favoritos'
+                      : 'Adicionar aos favoritos'}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
         {hasContent && (
@@ -862,6 +1209,11 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function getStickerUrl(url: string): string {
+  if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  return `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}${url}`;
+}
+
 function InfoIcon() {
   return (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>);
 }
@@ -873,6 +1225,9 @@ function PaperclipIcon() {
 }
 function EmojiIcon() {
   return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><line x1="9" x2="9.01" y1="9" y2="9" /><line x1="15" x2="15.01" y1="9" y2="9" /></svg>);
+}
+function StickerIcon() {
+  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 13.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7.5" /><path d="M20 13h-5a2 2 0 0 0-2 2v5" /><path d="m20 13-7 7" /></svg>);
 }
 function CloseSmallIcon() {
   return (<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" x2="6" y1="6" y2="18" /><line x1="6" x2="18" y1="6" y2="18" /></svg>);

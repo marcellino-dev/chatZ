@@ -96,6 +96,7 @@ model User {
 
   participatedTickets TicketParticipant[] @relation("TicketParticipants")
   addedParticipants   TicketParticipant[] @relation("ParticipantAddedBy")
+  stickers            Sticker[]
 
   @@map("users")
 }
@@ -127,6 +128,26 @@ model QuickReply {
 
   @@index([title])
   @@map("quick_replies")
+}
+
+// ==========================
+// FIGURINHAS DOS ATENDENTES
+// ==========================
+model Sticker {
+  id        String   @id @default(cuid())
+  name      String
+  url       String
+  filename  String
+  mimetype  String
+  size      Int
+  userId    String
+  sourceMessageId String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@unique([userId, sourceMessageId])
+  @@map("stickers")
 }
 
 // ==========================

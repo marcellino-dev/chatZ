@@ -22,6 +22,13 @@ export interface SendMediaOptions {
   mimetype: string;
   filename: string;
   caption?: string;
+  file?: Buffer;
+}
+
+export interface SendStickerOptions {
+  phone: string;
+  mimetype: string;
+  file: Buffer;
 }
 
 export interface DownloadedMedia {
@@ -31,6 +38,7 @@ export interface DownloadedMedia {
   mimetype: string;
   size: number;
   type: 'image' | 'video' | 'audio' | 'document';
+  sticker?: boolean;
 }
 
 // ==========================
@@ -90,6 +98,7 @@ export async function sendWhatsAppMedia({
   mimetype,
   filename,
   caption,
+  file,
 }: SendMediaOptions) {
   const normalizedPhone = normalizePhone(phone);
   const type = detectMediaType(mimetype);
@@ -123,13 +132,32 @@ export async function sendWhatsAppMedia({
       };
     }
 
+    const headers: Record<string, string> = {
+      apikey: env.EVOLUTION_API_KEY,
+    };
+    let requestBody: string | FormData;
+
+    if (file) {
+      const form = new FormData();
+      form.append('number', normalizedPhone);
+      form.append('mediatype', type);
+      form.append('mimetype', mimetype);
+      if (caption) form.append('caption', caption);
+      form.append(
+        'file',
+        new Blob([new Uint8Array(file)], { type: mimetype }),
+        filename
+      );
+      requestBody = form;
+    } else {
+      headers['Content-Type'] = 'application/json';
+      requestBody = JSON.stringify(body);
+    }
+
     const response = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: env.EVOLUTION_API_KEY,
-      },
-      body: JSON.stringify(body),
+      headers,
+      body: requestBody,
     });
 
     if (!response.ok) {
@@ -149,6 +177,33 @@ export async function sendWhatsAppMedia({
     console.error('   ❌ Erro ao enviar mídia:', err);
     throw err;
   }
+}
+
+export async function sendWhatsAppSticker({
+  phone,
+  mimetype,
+  file,
+}: SendStickerOptions) {
+  const endpoint = `${env.EVOLUTION_API_URL}/message/sendSticker/${env.EVOLUTION_INSTANCE}`;
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: env.EVOLUTION_API_KEY,
+    },
+    body: JSON.stringify({
+      number: normalizePhone(phone),
+      sticker: file.toString('base64'),
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    console.error('   ❌ Erro Evolution API ao enviar figurinha:', error);
+    throw new Error(`Evolution API error: ${response.status}`);
+  }
+
+  return response.json();
 }
 
 // ==========================
@@ -241,6 +296,7 @@ export async function downloadMediaFromWhatsApp(
       mimetype,
       size: buffer.length,
       type: mediaType,
+      ...(messageType === 'stickerMessage' && { sticker: true }),
     };
   } catch (err) {
     console.error('   ❌ Erro ao baixar mídia:', err);

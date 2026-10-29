@@ -18,6 +18,7 @@ interface BotInput {
     mimetype: string;
     size: number;
     type: 'image' | 'video' | 'audio' | 'document';
+    sticker?: boolean;
   } | null;
 }
 

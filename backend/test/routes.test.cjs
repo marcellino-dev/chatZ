@@ -126,6 +126,8 @@ const routes = [
   ['DELETE', '/contacts/test-contact', 401],
   ['POST', '/contacts/test-contact/start-conversation', 401],
   ['GET', '/quick-replies', 401],
+  ['GET', '/stickers', 401],
+  ['POST', '/stickers/from-message', 401],
   ['POST', '/quick-replies', 401],
   ['PATCH', '/quick-replies/test-reply', 401],
   ['DELETE', '/quick-replies/test-reply', 401],
@@ -544,6 +546,274 @@ test('agents can create shared quick replies and manage them', async () => {
     headers,
   });
   assert.equal(deleteResponse.status, 200);
+});
+
+test('agents can create personal stickers and send them as message attachments', async () => {
+  const token = signToken({ sub: fixture.owner.id, role: 'AGENT' });
+  const headers = { authorization: `Bearer ${token}` };
+  const formData = new FormData();
+  formData.append('name', 'Figurinha de teste');
+  formData.append(
+    'file',
+    new Blob([
+      Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lWQAAAAASUVORK5CYII=',
+        'base64'
+      ),
+    ], { type: 'image/png' }),
+    'figurinha.png'
+  );
+
+  const createResponse = await fetch(`${baseUrl}/stickers`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+  assert.equal(createResponse.status, 201);
+  const sticker = await createResponse.json();
+  assert.equal(sticker.name, 'Figurinha de teste');
+  assert.equal(sticker.mimetype, 'image/png');
+  assert.equal(sticker.userId, fixture.owner.id);
+
+  const listResponse = await fetch(`${baseUrl}/stickers`, { headers });
+  assert.equal(listResponse.status, 200);
+  assert.deepEqual((await listResponse.json()).map(({ id }) => id), [sticker.id]);
+
+  const otherAgentToken = signToken({
+    sub: fixture.otherAgent.id,
+    role: 'AGENT',
+  });
+  const otherListResponse = await fetch(`${baseUrl}/stickers`, {
+    headers: { authorization: `Bearer ${otherAgentToken}` },
+  });
+  assert.deepEqual(await otherListResponse.json(), []);
+
+  const stickerClient = await prisma.user.create({
+    data: {
+      name: 'Cliente de figurinha',
+      role: 'CLIENT',
+      email: `sticker-client-${process.pid}@test.invalid`,
+    },
+  });
+  const stickerTicket = await prisma.ticket.create({
+    data: {
+      subject: 'Teste de figurinha',
+      sectorId: fixture.sector.id,
+      clientId: stickerClient.id,
+      agentId: fixture.owner.id,
+    },
+  });
+  const messageResponse = await fetch(
+    `${baseUrl}/tickets/${stickerTicket.id}/messages`,
+    {
+      method: 'POST',
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        content: '',
+        attachment: {
+          url: sticker.url,
+          filename: sticker.filename,
+          originalName: sticker.name,
+          mimetype: sticker.mimetype,
+          size: sticker.size,
+          type: 'image',
+          sticker: true,
+        },
+      }),
+    }
+  );
+  assert.equal(messageResponse.status, 201);
+  assert.equal((await messageResponse.json()).attachment.sticker, true);
+
+  const incomingMessage = await prisma.message.create({
+    data: {
+      content: '',
+      ticketId: stickerTicket.id,
+      senderId: stickerClient.id,
+      attachment: {
+        url: sticker.url,
+        filename: sticker.filename,
+        originalName: 'figurinha-recebida.webp',
+        mimetype: sticker.mimetype,
+        size: sticker.size,
+        type: 'image',
+        sticker: true,
+      },
+    },
+  });
+  const saveIncomingResponse = await fetch(`${baseUrl}/stickers/from-message`, {
+    method: 'POST',
+    headers: { ...headers, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      messageId: incomingMessage.id,
+      name: 'Favorita do cliente',
+    }),
+  });
+  assert.equal(saveIncomingResponse.status, 201);
+  const savedIncomingSticker = await saveIncomingResponse.json();
+  assert.equal(savedIncomingSticker.sourceMessageId, incomingMessage.id);
+  assert.notEqual(savedIncomingSticker.filename, sticker.filename);
+
+  const duplicateFavoriteResponse = await fetch(
+    `${baseUrl}/stickers/from-message`,
+    {
+      method: 'POST',
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        messageId: incomingMessage.id,
+        name: 'Favorita do cliente',
+      }),
+    }
+  );
+  assert.equal((await duplicateFavoriteResponse.json()).id, savedIncomingSticker.id);
+
+  const forbiddenFavoriteResponse = await fetch(
+    `${baseUrl}/stickers/from-message`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${otherAgentToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        messageId: incomingMessage.id,
+        name: 'Sem acesso',
+      }),
+    }
+  );
+  assert.equal(forbiddenFavoriteResponse.status, 403);
+
+  const forbiddenDelete = await fetch(`${baseUrl}/stickers/${sticker.id}`, {
+    method: 'DELETE',
+    headers: { authorization: `Bearer ${otherAgentToken}` },
+  });
+  assert.equal(forbiddenDelete.status, 404);
+
+  const deleteResponse = await fetch(`${baseUrl}/stickers/${sticker.id}`, {
+    method: 'DELETE',
+    headers,
+  });
+  assert.equal(deleteResponse.status, 200);
+  const stickerFilePath = path.join(backendDir, 'uploads', sticker.filename);
+  assert.equal(require('node:fs').existsSync(stickerFilePath), true);
+  require('node:fs').unlinkSync(stickerFilePath);
+  const savedStickerFilePath = path.join(
+    backendDir,
+    'uploads',
+    savedIncomingSticker.filename
+  );
+  assert.equal(require('node:fs').existsSync(savedStickerFilePath), true);
+  require('node:fs').unlinkSync(savedStickerFilePath);
+});
+
+test('outgoing WebP stickers are sent to Evolution using the native sticker endpoint', async () => {
+  const token = signToken({ sub: fixture.owner.id, role: 'AGENT' });
+  const headers = {
+    authorization: `Bearer ${token}`,
+    'content-type': 'application/json',
+  };
+  const stickerForm = new FormData();
+  stickerForm.append('name', 'Figurinha WebP');
+  stickerForm.append(
+    'file',
+    new Blob(['fake-webp'], { type: 'image/webp' }),
+    'sticker.webp'
+  );
+  const stickerResponse = await fetch(`${baseUrl}/stickers`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}` },
+    body: stickerForm,
+  });
+  assert.equal(stickerResponse.status, 201);
+  const sticker = await stickerResponse.json();
+
+  const client = await prisma.user.create({
+    data: {
+      name: 'Cliente WhatsApp',
+      role: 'CLIENT',
+      phone: `5511888${process.pid.toString().slice(-7)}`,
+    },
+  });
+  const ticket = await prisma.ticket.create({
+    data: {
+      subject: 'Envio de figurinha',
+      sectorId: fixture.sector.id,
+      clientId: client.id,
+      agentId: fixture.owner.id,
+    },
+  });
+  const originalFetch = global.fetch;
+  let providerUrl = '';
+  let providerRequestBody;
+  let providerFails = false;
+  global.fetch = async (input, init) => {
+    providerUrl = String(input);
+    providerRequestBody = JSON.parse(init.body);
+    if (providerFails) return new Response('provider rejected sticker', { status: 500 });
+    return new Response(JSON.stringify({ key: { id: 'sticker-message-id' } }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+
+  try {
+    const response = await originalFetch(`${baseUrl}/tickets/${ticket.id}/messages`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        content: '',
+        attachment: {
+          url: sticker.url,
+          filename: sticker.filename,
+          originalName: sticker.name,
+          mimetype: sticker.mimetype,
+          size: sticker.size,
+          type: 'image',
+          sticker: true,
+        },
+      }),
+    });
+    assert.equal(response.status, 201);
+    assert.match(providerUrl, /\/message\/sendSticker\//);
+    assert.equal(providerRequestBody.number, client.phone);
+    assert.match(providerRequestBody.sticker, /^[A-Za-z0-9+/]+=*$/);
+
+    providerFails = true;
+    const messageCount = await prisma.message.count({
+      where: { ticketId: ticket.id },
+    });
+    const failedResponse = await originalFetch(
+      `${baseUrl}/tickets/${ticket.id}/messages`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          content: '',
+          attachment: {
+            url: sticker.url,
+            filename: sticker.filename,
+            originalName: sticker.name,
+            mimetype: sticker.mimetype,
+            size: sticker.size,
+            type: 'image',
+            sticker: true,
+          },
+        }),
+      }
+    );
+    assert.equal(failedResponse.status, 201);
+    const failedResult = await failedResponse.json();
+    assert.match(failedResult.deliveryWarning, /não foi possível enviá-la/);
+    assert.equal(
+      await prisma.message.count({ where: { ticketId: ticket.id } }),
+      messageCount + 1
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+
+  await prisma.sticker.delete({ where: { id: sticker.id } });
+  require('node:fs').unlinkSync(path.join(backendDir, 'uploads', sticker.filename));
 });
 
 test('agents can upload a profile picture with image validation', async () => {

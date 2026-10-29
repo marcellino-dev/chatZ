@@ -124,6 +124,15 @@ export interface Message {
     company?: string | null;
     profilePictureUrl?: string | null;
   };
+  attachment?: {
+    url: string;
+    filename: string;
+    originalName: string;
+    mimetype: string;
+    size: number;
+    type: 'image' | 'video' | 'audio' | 'document';
+    sticker?: boolean;
+  } | null;
 }
 
 export interface QuickReply {

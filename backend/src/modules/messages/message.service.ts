@@ -1,3 +1,5 @@
+import fs from 'fs/promises';
+import path from 'path';
 import { prisma } from '../../config/prisma';
 import { AppError } from '../../middlewares/errorHandler';
 import {
@@ -8,8 +10,10 @@ import {
 import {
   sendWhatsAppMessage,
   sendWhatsAppMedia,
+  sendWhatsAppSticker,
 } from '../whatsapp/whatsapp.service';
 import { env } from '../../config/env';
+import { uploadsDir } from '../uploads/upload.service';
 import { SendMessageInput } from './message.schemas';
 
 interface AuthUser {
@@ -138,29 +142,24 @@ export async function sendMessage(
     },
   });
 
-  // 🔥 Emite pra sala do ticket (quem tá com ele aberto)
-  emitToTicket(ticketId, 'message:new', message);
-
-  // 🔥 Emite pro setor (atualiza lista)
-  emitToSector(ticket.sectorId, 'ticket:updated', ticket);
-
-  // 🔥 Emite pra cada participante (menos o próprio sender)
   const participants = await prisma.ticketParticipant.findMany({
     where: { ticketId },
     select: { userId: true },
   });
 
-  for (const p of participants) {
-    if (p.userId !== user.id) {
-      emitToUser(p.userId, 'message:new', message);
+  emitToTicket(ticketId, 'message:new', message);
+  emitToSector(ticket.sectorId, 'ticket:updated', ticket);
+
+  for (const participant of participants) {
+    if (participant.userId !== user.id) {
+      emitToUser(participant.userId, 'message:new', message);
     }
   }
-
-  // 🔥 Se quem mandou não é o agent, emite pro agent também
   if (ticket.agentId && ticket.agentId !== user.id) {
     emitToUser(ticket.agentId, 'message:new', message);
   }
 
+  let deliveryWarning: string | undefined;
   // 📱 WhatsApp (só do atendente/participante pro cliente)
   if (user.role !== 'CLIENT' && ticket.client.phone) {
     try {
@@ -174,6 +173,9 @@ export async function sendMessage(
 
       if (data.attachment) {
         const fullUrl = `${baseUrl}${data.attachment.url}`;
+        const stickerFile = data.attachment.sticker
+          ? await readStickerFile(data.attachment.filename, data.attachment.url)
+          : undefined;
 
         if (data.attachment.type === 'audio') {
           await sendWhatsAppMessage({
@@ -182,13 +184,24 @@ export async function sendMessage(
           });
         }
 
-        await sendWhatsAppMedia({
-          phone,
-          url: fullUrl,
-          mimetype: data.attachment.mimetype,
-          filename: data.attachment.originalName,
-          caption: formatWithName(data.content?.trim() || ''),
-        });
+        if (data.attachment.sticker && stickerFile) {
+          await sendWhatsAppSticker({
+            phone,
+            mimetype: data.attachment.mimetype,
+            file: stickerFile,
+          });
+        } else {
+          await sendWhatsAppMedia({
+            phone,
+            url: fullUrl,
+            mimetype: data.attachment.mimetype,
+            filename: data.attachment.filename,
+            caption: data.attachment.sticker
+              ? ''
+              : formatWithName(data.content?.trim() || ''),
+            ...(stickerFile && { file: stickerFile }),
+          });
+        }
       } else if (data.content?.trim()) {
         await sendWhatsAppMessage({
           phone,
@@ -197,8 +210,27 @@ export async function sendMessage(
       }
     } catch (err) {
       console.error('⚠️ Erro ao enviar pro WhatsApp:', err);
+      deliveryWarning =
+        'Mensagem registrada no chat, mas não foi possível enviá-la ao WhatsApp. Verifique a conexão da instância.';
     }
   }
 
-  return message;
+  return deliveryWarning ? { ...message, deliveryWarning } : message;
+}
+
+async function readStickerFile(filename: string, url: string): Promise<Buffer> {
+  const safeFilename = path.basename(filename);
+  if (
+    safeFilename !== filename ||
+    url !== `/uploads/${safeFilename}` ||
+    !/^[a-zA-Z0-9._-]+$/.test(safeFilename)
+  ) {
+    throw new AppError('Arquivo da figurinha inválido', 400);
+  }
+
+  try {
+    return await fs.readFile(path.join(uploadsDir, safeFilename));
+  } catch {
+    throw new AppError('Arquivo da figurinha não está disponível', 400);
+  }
 }
