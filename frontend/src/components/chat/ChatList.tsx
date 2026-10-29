@@ -23,6 +23,12 @@ export function ChatList() {
   const [unreadMap, setUnreadMap] = useState<Record<string, number>>({});
   const [reloadTrigger, setReloadTrigger] = useState(0);
 
+  useEffect(() => {
+    if (user?.role !== 'ADMIN' && (filter === 'all' || filter === 'resolved')) {
+      setFilter('active');
+    }
+  }, [filter, user?.role]);
+
   // Atualiza unread
   useEffect(() => {
     const update = () => {
@@ -116,8 +122,12 @@ export function ChatList() {
   const tabs: { key: Filter; label: string; count: number; color: string }[] = [
     { key: 'active', label: 'Em atendimento', count: counts.active, color: 'bg-chatz-success' },
     { key: 'waiting', label: 'Aguardando', count: counts.waiting, color: 'bg-chatz-warning' },
-    { key: 'all', label: 'Todas', count: counts.all, color: 'bg-chatz-primary' },
-    { key: 'resolved', label: 'Resolvidas', count: counts.resolved, color: 'bg-chatz-text-subtle' },
+    ...(user?.role === 'ADMIN'
+      ? [
+          { key: 'all' as const, label: 'Todas', count: counts.all, color: 'bg-chatz-primary' },
+          { key: 'resolved' as const, label: 'Resolvidas', count: counts.resolved, color: 'bg-chatz-text-subtle' },
+        ]
+      : []),
   ];
 
   return (

@@ -84,9 +84,15 @@ export async function listTickets(user: AuthUser, query: ListTicketsQuery) {
           : []),
       ];
     }
+
+    const agentVisibleStatuses = ['WAITING', 'IN_PROGRESS'];
+    if (query.status && !agentVisibleStatuses.includes(query.status)) {
+      return [];
+    }
+    where.status = query.status ?? { in: agentVisibleStatuses };
   }
 
-  if (query.status) where.status = query.status;
+  if (query.status && user.role !== 'AGENT') where.status = query.status;
   if (query.priority) where.priority = query.priority;
   if (query.sectorId) where.sectorId = query.sectorId;
 

@@ -169,6 +169,59 @@ test('health and public webhook endpoints return their documented payloads', asy
   assert.deepEqual(await webhookResponse.json(), { ok: true, ignored: true });
 });
 
+test('admins can list all ticket statuses while agents only receive active and waiting tickets', async () => {
+  const resolvedTicket = await prisma.ticket.create({
+    data: {
+      subject: 'Atendimento resolvido',
+      status: 'RESOLVED',
+      sectorId: fixture.sector.id,
+      clientId: fixture.client.id,
+      agentId: fixture.owner.id,
+    },
+  });
+  const waitingTicket = await prisma.ticket.create({
+    data: {
+      subject: 'Atendimento aguardando',
+      status: 'WAITING',
+      sectorId: fixture.sector.id,
+      clientId: fixture.client.id,
+    },
+  });
+  const admin = await prisma.user.create({
+    data: {
+      name: 'Administrador dos tickets',
+      role: 'ADMIN',
+      email: `ticket-admin-${process.pid}@test.invalid`,
+    },
+  });
+  const agentToken = signToken({ sub: fixture.owner.id, role: 'AGENT' });
+  const adminToken = signToken({ sub: admin.id, role: 'ADMIN' });
+
+  const agentResponse = await fetch(`${baseUrl}/tickets`, {
+    headers: { authorization: `Bearer ${agentToken}` },
+  });
+  assert.equal(agentResponse.status, 200);
+  const agentTickets = await agentResponse.json();
+  assert.ok(agentTickets.every((ticket) => ['WAITING', 'IN_PROGRESS'].includes(ticket.status)));
+  assert.ok(!agentTickets.some((ticket) => ticket.id === resolvedTicket.id));
+  assert.ok(agentTickets.some((ticket) => ticket.id === waitingTicket.id));
+
+  const resolvedForAgentResponse = await fetch(
+    `${baseUrl}/tickets?status=RESOLVED`,
+    { headers: { authorization: `Bearer ${agentToken}` } }
+  );
+  assert.equal(resolvedForAgentResponse.status, 200);
+  assert.deepEqual(await resolvedForAgentResponse.json(), []);
+
+  const adminResponse = await fetch(`${baseUrl}/tickets`, {
+    headers: { authorization: `Bearer ${adminToken}` },
+  });
+  assert.equal(adminResponse.status, 200);
+  const adminTickets = await adminResponse.json();
+  assert.ok(adminTickets.some((ticket) => ticket.id === resolvedTicket.id));
+  assert.ok(adminTickets.some((ticket) => ticket.id === waitingTicket.id));
+});
+
 test('malformed JSON is reported as a client error', async () => {
   const response = await fetch(`${baseUrl}/auth/login`, {
     method: 'POST',
