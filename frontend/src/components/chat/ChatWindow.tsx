@@ -388,9 +388,12 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   }
 
   const isMine = user?.role === 'ADMIN' || ticket.agentId === user?.id;
+  const isParticipant = ticket.participants?.some(
+    (participant) => participant.userId === user?.id
+  ) ?? false;
   const canAssign =
     !ticket.agentId && (user?.role === 'AGENT' || user?.role === 'ADMIN');
-  const canSend = isMine;
+  const canSend = isMine || isParticipant;
 
   const initials = ticket.client.name
     .split(' ')
@@ -480,16 +483,13 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
           </div>
         )}
         <div className="space-y-2">
-          {messages.map((msg, idx) => {
-            const prev = messages[idx - 1];
+          {messages.map((msg) => {
             const isMineMsg = msg.senderId === user?.id;
-            const showName = !prev || prev.senderId !== msg.senderId;
             return (
               <MessageBubble
                 key={msg.id}
                 message={msg}
                 isMine={isMineMsg}
-                showName={showName}
               />
             );
           })}
@@ -662,7 +662,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   );
 }
 
-function MessageBubble({ message, isMine, showName }: { message: Message; isMine: boolean; showName: boolean }) {
+function MessageBubble({ message, isMine }: { message: Message; isMine: boolean }) {
   const time = new Date(message.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const attachment = (message as any).attachment as Attachment | null;
   const hasContent = message.content?.trim().length > 0;
@@ -670,9 +670,13 @@ function MessageBubble({ message, isMine, showName }: { message: Message; isMine
   return (
     <div className={`flex ${isMine ? 'justify-end' : 'justify-start'} animate-fade-in`}>
       <div className={`max-w-[70%] rounded-2xl ${isMine ? 'bg-chatz-button-gradient text-white rounded-br-sm shadow-[0_2px_8px_rgba(236,72,153,0.20)]' : 'bg-chatz-surface border border-chatz-border text-chatz-text rounded-bl-sm'} ${attachment && !hasContent ? 'p-2' : 'px-3.5 py-2'}`}>
-        {showName && !isMine && (
-          <p className="text-xs font-semibold mb-0.5 text-chatz-purple px-1.5 pt-0.5">{message.sender.name}</p>
-        )}
+        <p
+          className={`text-xs font-semibold mb-0.5 px-1.5 pt-0.5 ${
+            isMine ? 'text-white/80' : 'text-chatz-purple'
+          }`}
+        >
+          {message.sender.name}
+        </p>
         {attachment && (
           <div className={hasContent ? 'mb-2' : ''}>
             <AttachmentPreview attachment={attachment} isMine={isMine} />

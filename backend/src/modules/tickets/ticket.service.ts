@@ -67,14 +67,12 @@ export async function listTickets(user: AuthUser, query: ListTicketsQuery) {
     if (query.mine) {
       where.agentId = user.id;
     } else {
-      if (user.sectorId) {
-        where.sectorId = user.sectorId;
-      }
-      // 🔥 Inclui tickets que é participante
       where.OR = [
-        { agentId: null },
         { agentId: user.id },
         { participants: { some: { userId: user.id } } },
+        ...(user.sectorId
+          ? [{ sectorId: user.sectorId, agentId: null }]
+          : []),
       ];
     }
   }

@@ -32,9 +32,21 @@ export function AddParticipantModal({
   // 🔥 Carrega TODOS os setores
   useEffect(() => {
     if (!isOpen) return;
+    let cancelled = false;
+    setError('');
+
     api.get<Sector[]>('/sectors?active=true').then(({ data }) => {
-      setSectors(data);
+      if (!cancelled) setSectors(data);
+    }).catch((err) => {
+      if (!cancelled) {
+        setSectors([]);
+        setError(getErrorMessage(err));
+      }
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen]);
 
   // 🔥 Carrega agentes do setor selecionado (TODOS, não só ativos)
@@ -44,20 +56,31 @@ export function AddParticipantModal({
       return;
     }
 
+    let cancelled = false;
     setLoadingAgents(true);
     setAgents([]);
     setSelectedUserId('');
 
     api
-      .get(`/sectors/${selectedSectorId}`)
+      .get<{ users: User[] }>(`/sectors/${selectedSectorId}`)
       .then(({ data }) => {
-        const rawUsers = (data as any).users || [];
-        // Filtra SÓ por role=AGENT (não filtra por active — mostra todos)
-        const filtered = rawUsers.filter((u: User) => u.role === 'AGENT');
-        setAgents(filtered);
+        if (!cancelled) {
+          setAgents(data.users.filter((agent) => agent.role === 'AGENT' && agent.active));
+        }
       })
-      .catch(() => setAgents([]))
-      .finally(() => setLoadingAgents(false));
+      .catch((err) => {
+        if (!cancelled) {
+          setAgents([]);
+          setError(getErrorMessage(err));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingAgents(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen, selectedSectorId]);
 
   if (!isOpen) return null;

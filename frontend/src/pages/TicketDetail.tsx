@@ -279,11 +279,9 @@ function MessageBubble({
             : 'bg-chatz-card-hover border border-chatz-border text-chatz-text'
         }`}
       >
-        {!isMine && (
-          <p className="text-xs font-medium mb-1 opacity-75">
-            {message.sender.name}
-          </p>
-        )}
+        <p className="text-xs font-medium mb-1 opacity-75">
+          {message.sender.name}
+        </p>
         <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
         <p
           className={`text-[10px] mt-1 ${

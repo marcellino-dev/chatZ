@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import { api } from '../lib/api';
 import { connectSocket, disconnectSocket } from '../lib/socket';
 import type { User, AuthResponse, LoginPayload } from '../types';
@@ -25,7 +25,9 @@ export const useAuthStore = create<AuthState>()(
       login: async (payload) => {
         const { data } = await api.post<AuthResponse>('/auth/login', payload);
 
-        localStorage.setItem('chatz_token', data.token);
+        sessionStorage.setItem('chatz_token', data.token);
+        localStorage.removeItem('chatz_token');
+        localStorage.removeItem('chatz_user');
 
         set({
           user: data.user,
@@ -39,6 +41,8 @@ export const useAuthStore = create<AuthState>()(
 
       logout: () => {
         disconnectSocket();
+        sessionStorage.removeItem('chatz_token');
+        sessionStorage.removeItem('chatz_user');
         localStorage.removeItem('chatz_token');
         localStorage.removeItem('chatz_user');
         set({
@@ -60,6 +64,7 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'chatz_user',
+      storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
         user: state.user,
         token: state.token,

@@ -11,7 +11,7 @@ export const api = axios.create({
 
 // Interceptor de REQUEST: injeta o token
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('chatz_token');
+  const token = sessionStorage.getItem('chatz_token');
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;
   }

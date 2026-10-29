@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { api, getErrorMessage } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
 import { useTicketsStore } from '../../stores/tickets';
+import { useAuthStore } from '../../stores/auth';
 import { TransferModal } from './TransferModal';
 import { AddParticipantModal } from './AddParticipantModal';
 import type { Ticket } from '../../types';
@@ -14,6 +15,7 @@ interface Props {
 export function ChatInfo({ onClose }: Props) {
   const { id } = useParams<{ id: string }>();
   const updateStatus = useTicketsStore((s) => s.updateStatus);
+  const user = useAuthStore((s) => s.user);
 
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [loading, setLoading] = useState(true);
@@ -94,8 +96,9 @@ export function ChatInfo({ onClose }: Props) {
 
   const isActive =
     ticket.status === 'WAITING' || ticket.status === 'IN_PROGRESS';
-  const hasAgent = ticket.agentId !== null;
-  const canModify = isActive && hasAgent;
+  const canModify =
+    isActive &&
+    (user?.role === 'ADMIN' || ticket.agentId === user?.id);
 
   return (
     <aside className="w-[340px] bg-chatz-surface border-l border-chatz-border flex flex-col shrink-0 animate-slide-in">

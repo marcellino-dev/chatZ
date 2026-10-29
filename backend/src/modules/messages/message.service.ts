@@ -144,12 +144,18 @@ export async function sendMessage(
       const senderName = message.sender.name;
 
       const formatWithName = (text: string) => {
-        if (!text) return text;
-        return `*${senderName}:*\n${text}`;
+        return text ? `*${senderName}:*\n${text}` : `*${senderName}:*`;
       };
 
       if (data.attachment) {
         const fullUrl = `${baseUrl}${data.attachment.url}`;
+
+        if (data.attachment.type === 'audio') {
+          await sendWhatsAppMessage({
+            phone,
+            text: formatWithName(data.content?.trim() || 'Enviou um áudio'),
+          });
+        }
 
         await sendWhatsAppMedia({
           phone,
