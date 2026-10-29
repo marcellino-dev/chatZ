@@ -26,6 +26,15 @@ export interface User {
   createdAt: string;
 }
 
+export interface Contact {
+  id: string;
+  name: string;
+  phone: string;
+  company: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AuthResponse {
   token: string;
   user: User;

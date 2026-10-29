@@ -18,6 +18,10 @@ export function IconBar() {
     { to: '/settings', label: 'Configurações', icon: <SettingsIcon /> },
   ];
 
+  if (user.role === 'ADMIN' || user.role === 'AGENT') {
+    items.push({ to: '/contacts', label: 'Contatos', icon: <ContactsIcon /> });
+  }
+
   if (user.role === 'ADMIN') {
     items.push(
       { to: '/sectors', label: 'Setores', icon: <SectorIcon /> },
@@ -103,6 +107,17 @@ function UsersIcon() {
       <circle cx="9" cy="7" r="4" />
       <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
       <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  );
+}
+
+function ContactsIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="8" r="4" />
+      <path d="M3 21v-2a6 6 0 0 1 12 0v2" />
+      <path d="M16 4.5a4 4 0 0 1 0 7" />
+      <path d="M21 21v-2a6 6 0 0 0-3-5.2" />
     </svg>
   );
 }

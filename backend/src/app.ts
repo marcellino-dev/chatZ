@@ -7,6 +7,7 @@ import sectorRoutes from './modules/sectors/sector.routes';
 import botRoutes from './modules/bot/bot.routes';
 import whatsappRoutes from './modules/whatsapp/whatsapp.routes';
 import uploadRoutes from './modules/uploads/upload.routes';
+import contactRoutes from './modules/contacts/contact.routes';
 import { errorHandler } from './middlewares/errorHandler';
 
 const app = express();
@@ -31,6 +32,7 @@ app.get('/', (req, res) => {
 app.use('/auth', authRoutes);
 app.use('/tickets', ticketRoutes);
 app.use('/sectors', sectorRoutes);
+app.use('/contacts', contactRoutes);
 app.use('/bot', botRoutes);
 app.use('/whatsapp', whatsappRoutes);
 app.use('/uploads', uploadRoutes);

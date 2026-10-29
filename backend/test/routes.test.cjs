@@ -106,6 +106,11 @@ const routes = [
   ['POST', '/sectors', 401],
   ['PATCH', '/sectors/test-sector', 401],
   ['DELETE', '/sectors/test-sector', 401],
+  ['GET', '/contacts', 401],
+  ['POST', '/contacts', 401],
+  ['PATCH', '/contacts/test-contact', 401],
+  ['DELETE', '/contacts/test-contact', 401],
+  ['POST', '/contacts/test-contact/start-conversation', 401],
   ['POST', '/bot/simulate', 400],
   ['GET', '/whatsapp/webhook'],
   ['POST', '/whatsapp/webhook'],
@@ -155,6 +160,288 @@ test('malformed JSON is reported as a client error', async () => {
 
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: 'Requisição inválida' });
+});
+
+test('agents can create, search, and edit contacts', async () => {
+  const agentToken = signToken({ sub: fixture.owner.id, role: 'AGENT' });
+  const headers = {
+    authorization: `Bearer ${agentToken}`,
+    'content-type': 'application/json',
+  };
+  const createResponse = await fetch(`${baseUrl}/contacts`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      name: 'Ana Souza',
+      phone: '91991552191',
+      company: 'Empresa Azul',
+    }),
+  });
+
+  assert.equal(createResponse.status, 201);
+  const contact = await createResponse.json();
+  assert.equal(contact.name, 'Ana Souza');
+  assert.equal(contact.company, 'Empresa Azul');
+  assert.equal(contact.phone, '91991552191');
+  assert.equal(Object.hasOwn(contact, 'normalizedPhone'), false);
+  const storedContact = await prisma.contact.findUnique({
+    where: { id: contact.id },
+  });
+  assert.equal(storedContact.normalizedPhone, '5591991552191');
+
+  const searchResponse = await fetch(`${baseUrl}/contacts?q=91991552191`, {
+    headers,
+  });
+  assert.equal(searchResponse.status, 200);
+  const searchResults = await searchResponse.json();
+  assert.equal(searchResults.length, 1);
+  assert.equal(searchResults[0].id, contact.id);
+
+  const updateResponse = await fetch(`${baseUrl}/contacts/${contact.id}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ name: 'Ana Silva', company: '' }),
+  });
+  assert.equal(updateResponse.status, 200);
+  const updatedContact = await updateResponse.json();
+  assert.equal(updatedContact.name, 'Ana Silva');
+  assert.equal(updatedContact.company, null);
+  assert.equal(updatedContact.phone, '91991552191');
+});
+
+test('contacts reject duplicate phone numbers regardless of formatting', async () => {
+  const admin = await prisma.user.create({
+    data: {
+      name: 'Administrador',
+      role: 'ADMIN',
+      email: `admin-${process.pid}@test.invalid`,
+    },
+  });
+  const token = signToken({ sub: admin.id, role: 'ADMIN' });
+  const headers = {
+    authorization: `Bearer ${token}`,
+    'content-type': 'application/json',
+  };
+  const first = await fetch(`${baseUrl}/contacts`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ name: 'Contato um', phone: '11999997777' }),
+  });
+  assert.equal(first.status, 201);
+  const firstContact = await first.json();
+  assert.equal(firstContact.name, 'Contato um');
+
+  const duplicate = await fetch(`${baseUrl}/contacts`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      name: 'Contato duplicado',
+      phone: '+55 (11) 99999-7777',
+    }),
+  });
+  assert.equal(duplicate.status, 409);
+  assert.deepEqual(await duplicate.json(), {
+    error: 'Já existe um contato com esse telefone',
+  });
+
+  const second = await fetch(`${baseUrl}/contacts`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ name: 'Contato dois', phone: '11999998888' }),
+  });
+  const secondContact = await second.json();
+  const duplicateUpdate = await fetch(
+    `${baseUrl}/contacts/${secondContact.id}`,
+    {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ phone: '+55 (11) 99999-7777' }),
+    }
+  );
+  assert.equal(duplicateUpdate.status, 409);
+
+  const invalidPhone = await fetch(`${baseUrl}/contacts`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ name: 'Contato inválido', phone: 'abc' }),
+  });
+  assert.equal(invalidPhone.status, 400);
+
+  const foreignPhone = await fetch(`${baseUrl}/contacts`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ name: 'Contato estrangeiro', phone: '+1 202 555 0100' }),
+  });
+  assert.equal(foreignPhone.status, 400);
+});
+
+test('clients cannot manage contacts and updating unknown contacts returns 404', async () => {
+  const clientToken = signToken({ sub: fixture.ticket.clientId, role: 'CLIENT' });
+  const clientHeaders = {
+    authorization: `Bearer ${clientToken}`,
+    'content-type': 'application/json',
+  };
+  const forbiddenResponse = await fetch(`${baseUrl}/contacts`, {
+    headers: clientHeaders,
+  });
+  assert.equal(forbiddenResponse.status, 403);
+
+  const forbiddenDelete = await fetch(`${baseUrl}/contacts/test-contact`, {
+    method: 'DELETE',
+    headers: clientHeaders,
+  });
+  assert.equal(forbiddenDelete.status, 403);
+
+  const forbiddenStart = await fetch(
+    `${baseUrl}/contacts/test-contact/start-conversation`,
+    { method: 'POST', headers: clientHeaders, body: JSON.stringify({}) }
+  );
+  assert.equal(forbiddenStart.status, 403);
+
+  const agentToken = signToken({ sub: fixture.owner.id, role: 'AGENT' });
+  const missingResponse = await fetch(`${baseUrl}/contacts/missing-contact`, {
+    method: 'PATCH',
+    headers: {
+      authorization: `Bearer ${agentToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ name: 'Contato atualizado' }),
+  });
+  assert.equal(missingResponse.status, 404);
+});
+
+test('agents can start and reopen the same WhatsApp conversation from a contact', async () => {
+  const agentToken = signToken({ sub: fixture.owner.id, role: 'AGENT' });
+  const headers = {
+    authorization: `Bearer ${agentToken}`,
+    'content-type': 'application/json',
+  };
+  const createContactResponse = await fetch(`${baseUrl}/contacts`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      name: 'Cliente direto',
+      phone: '11988881234',
+    }),
+  });
+  const contact = await createContactResponse.json();
+
+  const startResponse = await fetch(
+    `${baseUrl}/contacts/${contact.id}/start-conversation`,
+    { method: 'POST', headers, body: JSON.stringify({}) }
+  );
+  assert.equal(startResponse.status, 201);
+  const ticket = await startResponse.json();
+  assert.equal(ticket.status, 'IN_PROGRESS');
+  assert.equal(ticket.channel, 'WHATSAPP');
+  assert.equal(ticket.agentId, fixture.owner.id);
+  assert.equal(ticket.sectorId, fixture.sector.id);
+  assert.equal(ticket.client.name, 'Cliente direto');
+  assert.equal(ticket.client.phone, '5511988881234');
+
+  const conversation = await prisma.conversation.findUnique({
+    where: { phone: '5511988881234' },
+  });
+  assert.equal(conversation.state, 'IN_ATTENDANCE');
+  assert.equal(conversation.ticketId, ticket.id);
+
+  const repeatStartResponse = await fetch(
+    `${baseUrl}/contacts/${contact.id}/start-conversation`,
+    { method: 'POST', headers, body: JSON.stringify({}) }
+  );
+  assert.equal(repeatStartResponse.status, 201);
+  assert.equal((await repeatStartResponse.json()).id, ticket.id);
+
+  const otherAgentToken = signToken({
+    sub: fixture.otherAgent.id,
+    role: 'AGENT',
+  });
+  const conflictResponse = await fetch(
+    `${baseUrl}/contacts/${contact.id}/start-conversation`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${otherAgentToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    }
+  );
+  assert.equal(conflictResponse.status, 409);
+
+  const deleteResponse = await fetch(`${baseUrl}/contacts/${contact.id}`, {
+    method: 'DELETE',
+    headers,
+  });
+  assert.equal(deleteResponse.status, 200);
+  assert.ok(await prisma.ticket.findUnique({ where: { id: ticket.id } }));
+  assert.equal(
+    await prisma.contact.findUnique({ where: { id: contact.id } }),
+    null
+  );
+});
+
+test('agents cannot start a contact conversation in another sector', async () => {
+  const agentToken = signToken({ sub: fixture.owner.id, role: 'AGENT' });
+  const headers = {
+    authorization: `Bearer ${agentToken}`,
+    'content-type': 'application/json',
+  };
+  const contactResponse = await fetch(`${baseUrl}/contacts`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      name: 'Cliente setor',
+      phone: '5511977776655',
+    }),
+  });
+  const contact = await contactResponse.json();
+
+  const response = await fetch(
+    `${baseUrl}/contacts/${contact.id}/start-conversation`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ sectorId: fixture.supportSector.id }),
+    }
+  );
+  assert.equal(response.status, 403);
+});
+
+test('admins can choose a sector when starting contact conversations', async () => {
+  const admin = await prisma.user.create({
+    data: {
+      name: 'Admin de atendimento',
+      role: 'ADMIN',
+      email: `contact-admin-${process.pid}@test.invalid`,
+    },
+  });
+  const headers = {
+    authorization: `Bearer ${signToken({ sub: admin.id, role: 'ADMIN' })}`,
+    'content-type': 'application/json',
+  };
+  const contactResponse = await fetch(`${baseUrl}/contacts`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      name: 'Contato administrado',
+      phone: '5511966665544',
+    }),
+  });
+  const contact = await contactResponse.json();
+
+  const response = await fetch(
+    `${baseUrl}/contacts/${contact.id}/start-conversation`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ sectorId: fixture.supportSector.id }),
+    }
+  );
+  assert.equal(response.status, 201);
+  const ticket = await response.json();
+  assert.equal(ticket.sectorId, fixture.supportSector.id);
+  assert.equal(ticket.agentId, admin.id);
 });
 
 test('assigned agent can add an active participant to a ticket', async () => {

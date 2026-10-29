@@ -5,6 +5,7 @@ import { Chat } from './pages/Chat';
 import { Settings } from './pages/Settings';
 import { Sectors } from './pages/Sectors';
 import { Users } from './pages/Users';
+import { Contacts } from './pages/Contacts';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { GlobalNotifications } from './components/GlobalNotifications';
 import { useAuthStore } from './stores/auth';
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/sectors" element={<Sectors />} />
           <Route path="/users" element={<Users />} />
+          <Route path="/contacts" element={<Contacts />} />
         </Route>
         <Route path="/" element={<Navigate to={isAuthenticated ? '/chat' : '/login'} replace />} />
         <Route path="*" element={<Navigate to={isAuthenticated ? '/chat' : '/login'} replace />} />
