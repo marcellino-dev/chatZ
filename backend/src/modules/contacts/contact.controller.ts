@@ -3,6 +3,7 @@ import { getRouteParam } from '../../utils/routeParams';
 import {
   createContactSchema,
   listContactsSchema,
+  saveTicketContactSchema,
   startConversationSchema,
   updateContactSchema,
 } from './contact.schemas';
@@ -12,6 +13,55 @@ export async function list(req: Request, res: Response, next: NextFunction) {
   try {
     const { q } = listContactsSchema.parse(req.query);
     return res.json(await contactService.listContacts(q));
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getById(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    return res.json(
+      await contactService.getContactById(getRouteParam(req, 'id'))
+    );
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getTicketContact(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    return res.json(
+      await contactService.getTicketClientContact(
+        req.user!,
+        getRouteParam(req, 'ticketId')
+      )
+    );
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function saveTicketClient(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const data = saveTicketContactSchema.parse(req.body ?? {});
+    const result = await contactService.saveTicketClientAsContact(
+      req.user!,
+      getRouteParam(req, 'ticketId'),
+      data
+    );
+    return res.status(result.existing ? 200 : 201).json(result);
   } catch (error) {
     return next(error);
   }

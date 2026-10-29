@@ -61,7 +61,16 @@ before(async () => {
       agentId: owner.id,
     },
   });
-  fixture = { sector, supportSector, owner, otherAgent, activeParticipant, inactiveParticipant, ticket };
+  fixture = {
+    sector,
+    supportSector,
+    owner,
+    otherAgent,
+    activeParticipant,
+    inactiveParticipant,
+    client,
+    ticket,
+  };
 
   server = http.createServer(app);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -84,6 +93,8 @@ const routes = [
   ['GET', '/'],
   ['POST', '/auth/login', 400],
   ['GET', '/auth/me', 401],
+  ['POST', '/auth/me/profile-picture', 401],
+  ['DELETE', '/auth/me/profile-picture', 401],
   ['POST', '/auth/users', 401],
   ['GET', '/auth/users', 401],
   ['PATCH', '/auth/users/test-user', 401],
@@ -107,10 +118,17 @@ const routes = [
   ['PATCH', '/sectors/test-sector', 401],
   ['DELETE', '/sectors/test-sector', 401],
   ['GET', '/contacts', 401],
+  ['GET', '/contacts/from-ticket/test-ticket', 401],
+  ['GET', '/contacts/test-contact', 401],
   ['POST', '/contacts', 401],
+  ['POST', '/contacts/from-ticket/test-ticket', 401],
   ['PATCH', '/contacts/test-contact', 401],
   ['DELETE', '/contacts/test-contact', 401],
   ['POST', '/contacts/test-contact/start-conversation', 401],
+  ['GET', '/quick-replies', 401],
+  ['POST', '/quick-replies', 401],
+  ['PATCH', '/quick-replies/test-reply', 401],
+  ['DELETE', '/quick-replies/test-reply', 401],
   ['POST', '/bot/simulate', 400],
   ['GET', '/whatsapp/webhook'],
   ['POST', '/whatsapp/webhook'],
@@ -162,8 +180,443 @@ test('malformed JSON is reported as a client error', async () => {
   assert.deepEqual(await response.json(), { error: 'Requisição inválida' });
 });
 
+test('only admins can manage employees and the team list excludes admins and clients', async () => {
+  const admin = await prisma.user.create({
+    data: {
+      name: 'Administrador',
+      role: 'ADMIN',
+      email: `team-admin-${process.pid}@test.invalid`,
+    },
+  });
+  const adminToken = signToken({ sub: admin.id, role: 'ADMIN' });
+  const agentToken = signToken({ sub: fixture.owner.id, role: 'AGENT' });
+  const adminHeaders = {
+    authorization: 'Bearer ' + adminToken,
+    'content-type': 'application/json',
+  };
+  const agentHeaders = {
+    authorization: 'Bearer ' + agentToken,
+    'content-type': 'application/json',
+  };
+
+  const listResponse = await fetch(`${baseUrl}/auth/users`, {
+    headers: adminHeaders,
+  });
+  assert.equal(listResponse.status, 200);
+  const team = await listResponse.json();
+  assert.ok(team.length > 0);
+  assert.ok(team.every((user) => user.role === 'AGENT'));
+  assert.ok(team.every((user) => user.id !== admin.id));
+  assert.ok(team.every((user) => user.id !== fixture.client.id));
+
+  const adminCreateResponse = await fetch(`${baseUrl}/auth/users`, {
+    method: 'POST',
+    headers: adminHeaders,
+    body: JSON.stringify({
+      name: 'Novo atendente',
+      email: `new-agent-${process.pid}@test.invalid`,
+      password: '123456',
+      role: 'AGENT',
+      sectorId: fixture.sector.id,
+    }),
+  });
+  assert.equal(adminCreateResponse.status, 201);
+  assert.equal((await adminCreateResponse.json()).role, 'AGENT');
+
+  const createAdminResponse = await fetch(`${baseUrl}/auth/users`, {
+    method: 'POST',
+    headers: adminHeaders,
+    body: JSON.stringify({
+      name: 'Outro administrador',
+      email: `extra-admin-${process.pid}@test.invalid`,
+      password: '123456',
+      role: 'ADMIN',
+    }),
+  });
+  assert.equal(createAdminResponse.status, 400);
+
+  const createResponse = await fetch(`${baseUrl}/auth/users`, {
+    method: 'POST',
+    headers: agentHeaders,
+    body: JSON.stringify({
+      name: 'Novo atendente',
+      email: `new-agent-${process.pid}@test.invalid`,
+      password: '123456',
+      role: 'AGENT',
+      sectorId: fixture.sector.id,
+    }),
+  });
+  assert.equal(createResponse.status, 403);
+
+  const updateResponse = await fetch(`${baseUrl}/auth/users/${fixture.owner.id}`, {
+    method: 'PATCH',
+    headers: agentHeaders,
+    body: JSON.stringify({ name: 'Nome alterado' }),
+  });
+  assert.equal(updateResponse.status, 403);
+
+  const deleteResponse = await fetch(`${baseUrl}/auth/users/${fixture.owner.id}`, {
+    method: 'DELETE',
+    headers: agentHeaders,
+  });
+  assert.equal(deleteResponse.status, 403);
+});
+
+test('agents can save an incoming client as a contact and open existing contacts', async () => {
+  const ownerToken = signToken({ sub: fixture.owner.id, role: 'AGENT' });
+  const response = await fetch(
+    `${baseUrl}/contacts/from-ticket/${fixture.ticket.id}`,
+    { method: 'POST', headers: { authorization: `Bearer ${ownerToken}` } }
+  );
+  assert.equal(response.status, 201);
+  const result = await response.json();
+  assert.equal(result.existing, false);
+  assert.equal(result.contact.name, 'Cliente');
+  assert.equal(result.contact.phone, '5511999999999');
+
+  const existingResponse = await fetch(
+    `${baseUrl}/contacts/from-ticket/${fixture.ticket.id}`,
+    { method: 'POST', headers: { authorization: `Bearer ${ownerToken}` } }
+  );
+  assert.equal(existingResponse.status, 200);
+  const existingResult = await existingResponse.json();
+  assert.equal(existingResult.existing, true);
+  assert.equal(existingResult.contact.id, result.contact.id);
+
+  const getResponse = await fetch(`${baseUrl}/contacts/${result.contact.id}`, {
+    headers: { authorization: `Bearer ${ownerToken}` },
+  });
+  assert.equal(getResponse.status, 200);
+  assert.equal((await getResponse.json()).id, result.contact.id);
+
+  const unrelatedToken = signToken({
+    sub: fixture.otherAgent.id,
+    role: 'AGENT',
+  });
+  const forbiddenResponse = await fetch(
+    `${baseUrl}/contacts/from-ticket/${fixture.ticket.id}`,
+    { method: 'POST', headers: { authorization: `Bearer ${unrelatedToken}` } }
+  );
+  assert.equal(forbiddenResponse.status, 403);
+});
+
+test('agents can save a client with a legacy Brazilian mobile number', async () => {
+  const client = await prisma.user.create({
+    data: {
+      name: 'Cliente legado',
+      role: 'CLIENT',
+      phone: '554789299801',
+    },
+  });
+  const ticket = await prisma.ticket.create({
+    data: {
+      subject: 'Atendimento com número antigo',
+      status: 'IN_PROGRESS',
+      sectorId: fixture.sector.id,
+      clientId: client.id,
+      agentId: fixture.owner.id,
+    },
+  });
+  const token = signToken({ sub: fixture.owner.id, role: 'AGENT' });
+  const response = await fetch(`${baseUrl}/contacts/from-ticket/${ticket.id}`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}` },
+  });
+
+  assert.equal(response.status, 201);
+  const result = await response.json();
+  assert.equal(result.contact.phone, '554789299801');
+  const storedContact = await prisma.contact.findUnique({
+    where: { id: result.contact.id },
+  });
+  assert.equal(storedContact.normalizedPhone, '554789299801');
+});
+
+test('saved contact identity and company appear on tickets and incoming messages', async () => {
+  const phone = '5547999887766';
+  const client = await prisma.user.create({
+    data: { name: 'Cliente original', role: 'CLIENT', phone },
+  });
+  const ticket = await prisma.ticket.create({
+    data: {
+      subject: 'Atendimento do Marcelo',
+      status: 'IN_PROGRESS',
+      sectorId: fixture.sector.id,
+      clientId: client.id,
+      agentId: fixture.owner.id,
+    },
+  });
+  const token = signToken({ sub: fixture.owner.id, role: 'AGENT' });
+  const saveResponse = await fetch(
+    `${baseUrl}/contacts/from-ticket/${ticket.id}`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name: 'Marcelo', company: 'Empresa do Marcelo' }),
+    }
+  );
+  assert.equal(saveResponse.status, 201);
+  const saved = await saveResponse.json();
+  assert.equal(saved.contact.name, 'Marcelo');
+  assert.equal(saved.contact.company, 'Empresa do Marcelo');
+
+  const storedClient = await prisma.user.findUnique({ where: { id: client.id } });
+  assert.equal(storedClient.name, 'Marcelo');
+  assert.equal(storedClient.company, 'Empresa do Marcelo');
+
+  const savedContactResponse = await fetch(
+    `${baseUrl}/contacts/from-ticket/${ticket.id}`,
+    { headers: { authorization: `Bearer ${token}` } }
+  );
+  assert.equal(savedContactResponse.status, 200);
+  assert.equal((await savedContactResponse.json()).name, 'Marcelo');
+
+  await prisma.conversation.create({
+    data: {
+      phone,
+      state: 'IN_ATTENDANCE',
+      sectorId: fixture.sector.id,
+      ticketId: ticket.id,
+    },
+  });
+
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    if (String(url).includes('/chat/fetchProfilePictureUrl/')) {
+      return new Response(
+        JSON.stringify({ profilePictureUrl: 'https://cdn.test.invalid/marcelo.jpg' }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      );
+    }
+    return new Response('{}', {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+
+  try {
+    const webhookResponse = await originalFetch(`${baseUrl}/whatsapp/webhook`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        event: 'messages.upsert',
+        data: {
+          key: { fromMe: false, remoteJid: `${phone}@s.whatsapp.net` },
+          messageType: 'conversation',
+          message: { conversation: 'Olá novamente' },
+          messageTimestamp: 1,
+        },
+      }),
+    });
+    assert.equal(webhookResponse.status, 200);
+
+    const messagesResponse = await originalFetch(
+      `${baseUrl}/tickets/${ticket.id}/messages`,
+      { headers: { authorization: `Bearer ${token}` } }
+    );
+    assert.equal(messagesResponse.status, 200);
+    const messages = await messagesResponse.json();
+    assert.equal(messages.at(-1).sender.name, 'Marcelo');
+    assert.equal(messages.at(-1).sender.company, 'Empresa do Marcelo');
+    assert.equal(
+      messages.at(-1).sender.profilePictureUrl,
+      'https://cdn.test.invalid/marcelo.jpg'
+    );
+
+    const ticketResponse = await originalFetch(`${baseUrl}/tickets/${ticket.id}`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const ticketDetails = await ticketResponse.json();
+    assert.equal(ticketDetails.client.name, 'Marcelo');
+    assert.equal(ticketDetails.client.company, 'Empresa do Marcelo');
+    assert.equal(
+      ticketDetails.client.profilePictureUrl,
+      'https://cdn.test.invalid/marcelo.jpg'
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test('agents can create shared quick replies and manage them', async () => {
+  const agentToken = signToken({ sub: fixture.owner.id, role: 'AGENT' });
+  const headers = {
+    authorization: `Bearer ${agentToken}`,
+    'content-type': 'application/json',
+  };
+  const createResponse = await fetch(`${baseUrl}/quick-replies`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      title: 'Saudação',
+      content: 'Olá! Como podemos ajudar?',
+    }),
+  });
+  assert.equal(createResponse.status, 201);
+  const reply = await createResponse.json();
+
+  const otherAgentToken = signToken({
+    sub: fixture.otherAgent.id,
+    role: 'AGENT',
+  });
+  const listResponse = await fetch(`${baseUrl}/quick-replies`, {
+    headers: { authorization: `Bearer ${otherAgentToken}` },
+  });
+  assert.equal(listResponse.status, 200);
+  assert.ok((await listResponse.json()).some((item) => item.id === reply.id));
+
+  const updateResponse = await fetch(`${baseUrl}/quick-replies/${reply.id}`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ content: 'Olá, {{nome}}! Como podemos ajudar?' }),
+  });
+  assert.equal(updateResponse.status, 200);
+  assert.equal(
+    (await updateResponse.json()).content,
+    'Olá, {{nome}}! Como podemos ajudar?'
+  );
+
+  const invalidResponse = await fetch(`${baseUrl}/quick-replies`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ title: '', content: '' }),
+  });
+  assert.equal(invalidResponse.status, 400);
+
+  const deleteResponse = await fetch(`${baseUrl}/quick-replies/${reply.id}`, {
+    method: 'DELETE',
+    headers,
+  });
+  assert.equal(deleteResponse.status, 200);
+});
+
+test('agents can upload a profile picture with image validation', async () => {
+  const token = signToken({ sub: fixture.owner.id, role: 'AGENT' });
+  const formData = new FormData();
+  formData.append('file', new Blob(['fake image'], { type: 'image/png' }), 'avatar.png');
+  const response = await fetch(`${baseUrl}/auth/me/profile-picture`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  assert.equal(response.status, 200);
+  const user = await response.json();
+  assert.match(user.profilePictureUrl, /^\/uploads\/.+\.png$/);
+
+  const storedUser = await prisma.user.findUnique({
+    where: { id: fixture.owner.id },
+  });
+  assert.equal(storedUser.profilePictureUrl, user.profilePictureUrl);
+
+  const invalidForm = new FormData();
+  invalidForm.append(
+    'file',
+    new Blob(['not an image'], { type: 'text/plain' }),
+    'not-image.txt'
+  );
+  const invalidResponse = await fetch(`${baseUrl}/auth/me/profile-picture`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}` },
+    body: invalidForm,
+  });
+  assert.equal(invalidResponse.status, 400);
+
+  const removeResponse = await fetch(`${baseUrl}/auth/me/profile-picture`, {
+    method: 'DELETE',
+    headers: { authorization: 'Bearer ' + token },
+  });
+  assert.equal(removeResponse.status, 200);
+  const updatedUser = await removeResponse.json();
+  assert.equal(updatedUser.profilePictureUrl, null);
+  const userWithoutPicture = await prisma.user.findUnique({
+    where: { id: fixture.owner.id },
+  });
+  assert.equal(userWithoutPicture.profilePictureUrl, null);
+});
+
+test('incoming WhatsApp messages refresh the client profile picture', async () => {
+  const originalFetch = global.fetch;
+  const requests = [];
+  global.fetch = async (url) => {
+    requests.push(String(url));
+    if (String(url).includes('/chat/fetchProfilePictureUrl/')) {
+      return new Response(
+        JSON.stringify({ profilePictureUrl: 'https://cdn.test.invalid/customer.jpg' }),
+        { status: 200, headers: { 'content-type': 'application/json' } }
+      );
+    }
+    return new Response(JSON.stringify({ key: { id: 'mock-whatsapp-message' } }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+
+  try {
+    const webhookResponse = await originalFetch(
+      `${baseUrl}/whatsapp/webhook`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          event: 'messages.upsert',
+          data: {
+            key: {
+              fromMe: false,
+              remoteJid: '5511987654321@s.whatsapp.net',
+            },
+            messageType: 'conversation',
+            message: { conversation: 'Olá' },
+            messageTimestamp: 1,
+          },
+        }),
+      }
+    );
+    assert.equal(webhookResponse.status, 200);
+
+    const client = await prisma.user.findUnique({
+      where: { phone: '5511987654321' },
+    });
+    assert.equal(client.profilePictureUrl, 'https://cdn.test.invalid/customer.jpg');
+    assert.ok(
+      requests.some((url) => url.includes('/chat/fetchProfilePictureUrl/chatz'))
+    );
+
+    const ticket = await prisma.ticket.create({
+      data: {
+        subject: 'Atendimento com foto',
+        status: 'IN_PROGRESS',
+        sectorId: fixture.sector.id,
+        clientId: client.id,
+        agentId: fixture.owner.id,
+      },
+    });
+    const ticketToken = signToken({ sub: fixture.owner.id, role: 'AGENT' });
+    const ticketResponse = await originalFetch(`${baseUrl}/tickets/${ticket.id}`, {
+      headers: { authorization: 'Bearer ' + ticketToken },
+    });
+    assert.equal(ticketResponse.status, 200);
+    const ticketDetails = await ticketResponse.json();
+    assert.equal(
+      ticketDetails.client.profilePictureUrl,
+      'https://cdn.test.invalid/customer.jpg'
+    );
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('agents can create, search, and edit contacts', async () => {
   const agentToken = signToken({ sub: fixture.owner.id, role: 'AGENT' });
+  const client = await prisma.user.create({
+    data: {
+      name: 'Cliente sem contato salvo',
+      role: 'CLIENT',
+      phone: '+55 (91) 99155-2191',
+    },
+  });
   const headers = {
     authorization: `Bearer ${agentToken}`,
     'content-type': 'application/json',
@@ -188,6 +641,11 @@ test('agents can create, search, and edit contacts', async () => {
     where: { id: contact.id },
   });
   assert.equal(storedContact.normalizedPhone, '5591991552191');
+  const identifiedClient = await prisma.user.findUnique({
+    where: { id: client.id },
+  });
+  assert.equal(identifiedClient.name, 'Ana Souza');
+  assert.equal(identifiedClient.company, 'Empresa Azul');
 
   const searchResponse = await fetch(`${baseUrl}/contacts?q=91991552191`, {
     headers,
@@ -207,6 +665,11 @@ test('agents can create, search, and edit contacts', async () => {
   assert.equal(updatedContact.name, 'Ana Silva');
   assert.equal(updatedContact.company, null);
   assert.equal(updatedContact.phone, '91991552191');
+  const updatedClient = await prisma.user.findUnique({
+    where: { id: client.id },
+  });
+  assert.equal(updatedClient.name, 'Ana Silva');
+  assert.equal(updatedClient.company, null);
 });
 
 test('contacts reject duplicate phone numbers regardless of formatting', async () => {

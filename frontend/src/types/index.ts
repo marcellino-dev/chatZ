@@ -22,6 +22,8 @@ export interface User {
   role: Role;
   active: boolean;
   sectorId: string | null;
+  company?: string | null;
+  profilePictureUrl?: string | null;
   sector?: Pick<Sector, 'id' | 'name' | 'slug'> | null;
   createdAt: string;
 }
@@ -68,6 +70,7 @@ export interface TicketParticipant {
     name: string;
     email: string;
     role: Role;
+    profilePictureUrl?: string | null;
   };
   addedBy: {
     id: string;
@@ -90,7 +93,10 @@ export interface Ticket {
   closedAt: string | null;
 
   sector: Pick<Sector, 'id' | 'name' | 'slug'>;
-  client: Pick<User, 'id' | 'name' | 'phone' | 'role'>;
+  client: Pick<
+    User,
+    'id' | 'name' | 'phone' | 'role' | 'company' | 'profilePictureUrl'
+  >;
   agent: Pick<User, 'id' | 'name' | 'email' | 'role'> | null;
   requestedAgent: Pick<User, 'id' | 'name' | 'email' | 'role'> | null;
 
@@ -115,7 +121,17 @@ export interface Message {
     id: string;
     name: string;
     role: Role;
+    company?: string | null;
+    profilePictureUrl?: string | null;
   };
+}
+
+export interface QuickReply {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ==========================

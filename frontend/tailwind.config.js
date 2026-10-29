@@ -9,25 +9,25 @@ export default {
       colors: {
         chatz: {
           // Fundos
-          bg: '#FAFBFC',
+          bg: '#FAF8F7',
           surface: '#FFFFFF',
-          'surface-alt': '#F8FAFC',
-          'surface-hover': '#F1F5F9',
+          'surface-alt': '#F8F6F5',
+          'surface-hover': '#F3EFEE',
 
           // Bordas
-          border: '#E5E7EB',
-          'border-strong': '#D1D5DB',
+          border: '#E9E1E0',
+          'border-strong': '#D6CBC9',
 
           // Textos
           text: '#0F172A',
           'text-muted': '#64748B',
           'text-subtle': '#94A3B8',
 
-          // Azul (início do gradiente — uso funcional)
-          primary: '#3B82F6',
-          'primary-hover': '#2563EB',
-          'primary-light': '#EFF6FF',
-          'primary-border': '#BFDBFE',
+          // Rosa da marca
+          primary: '#E719B5',
+          'primary-hover': '#C91597',
+          'primary-light': '#FFF0F8',
+          'primary-border': '#FBCFE8',
 
           // Roxo (meio do gradiente)
           purple: '#A855F7',
@@ -69,7 +69,7 @@ export default {
           'sector-certificados': '#A855F7',
           'sector-comercial': '#F97316',
           'sector-financeiro': '#10B981',
-          'sector-suporte': '#3B82F6',
+          'sector-suporte': '#E719B5',
         },
       },
 
@@ -80,8 +80,8 @@ export default {
         'chatz-lg': '0 12px 32px rgba(15, 23, 42, 0.10)',
         'chatz-xl': '0 24px 48px rgba(15, 23, 42, 0.12)',
         'chatz-inner': 'inset 0 1px 2px rgba(15, 23, 42, 0.04)',
-        'primary': '0 4px 14px rgba(59, 130, 246, 0.35)',
-        'primary-lg': '0 8px 24px rgba(59, 130, 246, 0.40)',
+        'primary': '0 4px 14px rgba(231, 25, 181, 0.25)',
+        'primary-lg': '0 8px 24px rgba(231, 25, 181, 0.30)',
         'pink': '0 4px 14px rgba(236, 72, 153, 0.35)',
         'pink-lg': '0 8px 24px rgba(236, 72, 153, 0.45)',
       },

@@ -1,9 +1,16 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, type Ticket } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { AppError } from '../../middlewares/errorHandler';
 import { emitToSector, emitToUser } from '../../sockets/socket.server';
+import { canViewTicket } from '../tickets/ticket.permissions';
+import {
+  findClientUsersByPhone,
+  normalizeBrazilianPhone,
+  syncContactIdentity,
+} from './contactIdentity.service';
 import type {
   CreateContactInput,
+  SaveTicketContactInput,
   UpdateContactInput,
 } from './contact.schemas';
 
@@ -15,7 +22,16 @@ interface AuthUser {
 
 const ticketInclude = {
   sector: { select: { id: true, name: true, slug: true } },
-  client: { select: { id: true, name: true, phone: true, role: true } },
+  client: {
+    select: {
+      id: true,
+      name: true,
+      phone: true,
+      role: true,
+      company: true,
+      profilePictureUrl: true,
+    },
+  },
   agent: { select: { id: true, name: true, email: true, role: true } },
   requestedAgent: { select: { id: true, name: true, email: true, role: true } },
 } satisfies Prisma.TicketInclude;
@@ -29,21 +45,17 @@ const contactSelect = {
   updatedAt: true,
 } satisfies Prisma.ContactSelect;
 
-const brazilianAreaCodes = new Set([
-  '11', '12', '13', '14', '15', '16', '17', '18', '19',
-  '21', '22', '24', '27', '28',
-  '31', '32', '33', '34', '35', '37', '38',
-  '41', '42', '43', '44', '45', '46', '47', '48', '49',
-  '51', '53', '54', '55', '61', '62', '63', '64', '65', '66', '67',
-  '68', '69', '71', '73', '74', '75', '77', '79',
-  '81', '82', '83', '84', '85', '86', '87', '88', '89',
-  '91', '92', '93', '94', '95', '96', '97', '98', '99',
-]);
+const contactFromTicketSelect = {
+  id: true,
+  name: true,
+  phone: true,
+  company: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.ContactSelect;
 
 function normalizePhone(phone: string): string {
-  const normalized = phone.replace(/\D/g, '');
-  const brazilianNumber = toBrazilianPhone(normalized);
-
+  const brazilianNumber = normalizeBrazilianPhone(phone);
   if (!brazilianNumber) {
     throw new AppError(
       'Informe um telefone brasileiro com DDD: 10 ou 11 dígitos, com ou sem o código 55'
@@ -51,30 +63,6 @@ function normalizePhone(phone: string): string {
   }
 
   return brazilianNumber;
-}
-
-function toBrazilianPhone(digits: string): string | null {
-  let nationalNumber: string;
-
-  if (digits.length === 10 || digits.length === 11) {
-    nationalNumber = digits;
-  } else if (
-    (digits.length === 12 || digits.length === 13) &&
-    digits.startsWith('55')
-  ) {
-    nationalNumber = digits.slice(2);
-  } else {
-    return null;
-  }
-
-  const areaCode = nationalNumber.slice(0, 2);
-  const subscriberNumber = nationalNumber.slice(2);
-  const validSubscriber =
-    (subscriberNumber.length === 8 && /^[2-5]/.test(subscriberNumber)) ||
-    (subscriberNumber.length === 9 && subscriberNumber.startsWith('9'));
-
-  if (!brazilianAreaCodes.has(areaCode) || !validSubscriber) return null;
-  return `55${nationalNumber}`;
 }
 
 function handleDuplicatePhone(error: unknown): never {
@@ -108,9 +96,111 @@ export async function listContacts(query?: string) {
   return contacts;
 }
 
+export async function getContactById(id: string) {
+  const contact = await prisma.contact.findUnique({
+    where: { id },
+    select: contactSelect,
+  });
+  if (!contact) throw new AppError('Contato não encontrado', 404);
+  return contact;
+}
+
+export async function getTicketClientContact(user: AuthUser, ticketId: string) {
+  const ticket = await prisma.ticket.findUnique({
+    where: { id: ticketId },
+    include: { client: { select: { phone: true } } },
+  });
+  if (!ticket) throw new AppError('Ticket não encontrado', 404);
+  await assertTicketAccess(user, ticket);
+  if (!ticket.client.phone) return null;
+
+  return prisma.contact.findUnique({
+    where: { normalizedPhone: normalizePhone(ticket.client.phone) },
+    select: contactFromTicketSelect,
+  });
+}
+
+export async function saveTicketClientAsContact(
+  user: AuthUser,
+  ticketId: string,
+  data: SaveTicketContactInput
+) {
+  const ticket = await prisma.ticket.findUnique({
+    where: { id: ticketId },
+    include: { client: true },
+  });
+  if (!ticket) throw new AppError('Ticket não encontrado', 404);
+  await assertTicketAccess(user, ticket);
+  if (!ticket.client.phone) {
+    throw new AppError('O cliente não possui telefone cadastrado', 400);
+  }
+
+  const normalizedPhone = normalizePhone(ticket.client.phone);
+  const existing = await prisma.contact.findUnique({
+    where: { normalizedPhone },
+    select: contactFromTicketSelect,
+  });
+  const name = data.name ?? existing?.name ?? ticket.client.name;
+  const company =
+    data.company === undefined ? existing?.company ?? null : data.company;
+
+  try {
+    const contact = existing
+      ? await prisma.contact.update({
+          where: { id: existing.id },
+          data: { name, company },
+          select: contactFromTicketSelect,
+        })
+      : await prisma.contact.create({
+          data: {
+            name,
+            phone: ticket.client.phone,
+            normalizedPhone,
+            company,
+          },
+          select: contactFromTicketSelect,
+        });
+    await syncContactIdentity(contact);
+    return { contact, existing: Boolean(existing) };
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      const contact = await prisma.contact.findUnique({
+        where: { normalizedPhone },
+        select: contactFromTicketSelect,
+      });
+      if (contact) {
+        const updatedContact = await prisma.contact.update({
+          where: { id: contact.id },
+          data: { name, company },
+          select: contactFromTicketSelect,
+        });
+        await syncContactIdentity(updatedContact);
+        return { contact: updatedContact, existing: true };
+      }
+    }
+    throw error;
+  }
+}
+
+async function assertTicketAccess(
+  user: AuthUser,
+  ticket: Ticket
+) {
+  if (canViewTicket(user, ticket)) return;
+  const participant = await prisma.ticketParticipant.findUnique({
+    where: { ticketId_userId: { ticketId: ticket.id, userId: user.id } },
+  });
+  if (!participant) {
+    throw new AppError('Sem permissão para ver este ticket', 403);
+  }
+}
+
 export async function createContact(data: CreateContactInput) {
   try {
-    return await prisma.contact.create({
+    const contact = await prisma.contact.create({
       select: contactSelect,
       data: {
         name: data.name,
@@ -119,6 +209,8 @@ export async function createContact(data: CreateContactInput) {
         company: data.company,
       },
     });
+    await syncContactIdentity(contact);
+    return contact;
   } catch (error) {
     handleDuplicatePhone(error);
   }
@@ -129,7 +221,7 @@ export async function updateContact(id: string, data: UpdateContactInput) {
   if (!existing) throw new AppError('Contato não encontrado', 404);
 
   try {
-    return await prisma.contact.update({
+    const contact = await prisma.contact.update({
       select: contactSelect,
       where: { id },
       data: {
@@ -137,6 +229,8 @@ export async function updateContact(id: string, data: UpdateContactInput) {
         ...(data.phone ? { normalizedPhone: normalizePhone(data.phone) } : {}),
       },
     });
+    await syncContactIdentity(contact, existing.normalizedPhone);
+    return contact;
   } catch (error) {
     handleDuplicatePhone(error);
   }
@@ -147,6 +241,11 @@ export async function deleteContact(id: string) {
   if (!existing) throw new AppError('Contato não encontrado', 404);
 
   await prisma.contact.delete({ where: { id } });
+  await syncContactIdentity({
+    ...existing,
+    name: `Cliente ${existing.phone.replace(/\D/g, '').slice(-4)}`,
+    company: null,
+  });
   return { message: 'Contato excluído com sucesso' };
 }
 
@@ -177,16 +276,8 @@ export async function startConversation(
     throw new AppError('Setor não encontrado ou inativo', 404);
   }
 
-  const usersWithPhone = await prisma.user.findMany({
-    where: { phone: { not: null } },
-    select: { id: true, name: true, phone: true, role: true },
-  });
-  let client = usersWithPhone.find(
-    (candidate) =>
-      candidate.phone !== null &&
-      toBrazilianPhone(candidate.phone.replace(/\D/g, '')) ===
-        contact.normalizedPhone
-  );
+  const existingClients = await findClientUsersByPhone(contact.normalizedPhone);
+  let client = existingClients[0];
 
   if (client && client.role !== 'CLIENT') {
     throw new AppError('Esse telefone já está associado a um usuário da equipe', 409);
@@ -197,10 +288,10 @@ export async function startConversation(
       client = await prisma.user.create({
         data: {
           name: contact.name,
+          company: contact.company,
           phone: contact.normalizedPhone,
           role: 'CLIENT',
         },
-        select: { id: true, name: true, phone: true, role: true },
       });
     } catch (error) {
       if (
@@ -212,7 +303,6 @@ export async function startConversation(
 
       const conflictingUser = await prisma.user.findUnique({
         where: { phone: contact.normalizedPhone },
-        select: { id: true, name: true, phone: true, role: true },
       });
       if (!conflictingUser || conflictingUser.role !== 'CLIENT') {
         throw new AppError('Esse telefone já está associado a outro usuário', 409);
@@ -220,6 +310,9 @@ export async function startConversation(
       client = conflictingUser;
     }
   }
+
+  const [syncedClient] = await syncContactIdentity(contact);
+  if (syncedClient) client = syncedClient;
 
   const activeStatuses = ['WAITING', 'IN_PROGRESS', 'TRANSFERRED'] as const;
   const conversation = await prisma.conversation.findUnique({

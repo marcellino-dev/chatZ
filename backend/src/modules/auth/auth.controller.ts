@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import * as authService from './auth.service';
 import { loginSchema, createUserSchema } from './auth.schemas';
 import { getRouteParam } from '../../utils/routeParams';
+import { saveUploadedFile } from '../uploads/upload.service';
 
 // ==========================
 // LOGIN
@@ -33,6 +34,40 @@ export async function me(
     return res.json(user);
   } catch (err) {
     return next(err);
+  }
+}
+
+export async function updateProfilePicture(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Selecione uma imagem' });
+    }
+
+    const saved = saveUploadedFile(req.file);
+    const user = await authService.updateProfilePicture(
+      req.user!.id,
+      saved.url
+    );
+    return res.json(user);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function removeProfilePicture(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const user = await authService.removeProfilePicture(req.user!.id);
+    return res.json(user);
+  } catch (error) {
+    return next(error);
   }
 }
 

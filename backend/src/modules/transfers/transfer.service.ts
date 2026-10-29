@@ -88,7 +88,16 @@ export async function transferTicket(
       },
       include: {
         sector: { select: { id: true, name: true, slug: true } },
-        client: { select: { id: true, name: true, phone: true, role: true } },
+        client: {
+          select: {
+            id: true,
+            name: true,
+            company: true,
+            phone: true,
+            role: true,
+            profilePictureUrl: true,
+          },
+        },
         agent: { select: { id: true, name: true, email: true, role: true } },
         requestedAgent: { select: { id: true, name: true, email: true, role: true } },
       },
@@ -142,7 +151,16 @@ export async function transferTicket(
       },
       include: {
         sector: { select: { id: true, name: true, slug: true } },
-        client: { select: { id: true, name: true, phone: true, role: true } },
+        client: {
+          select: {
+            id: true,
+            name: true,
+            company: true,
+            phone: true,
+            role: true,
+            profilePictureUrl: true,
+          },
+        },
         agent: { select: { id: true, name: true, email: true, role: true } },
         requestedAgent: { select: { id: true, name: true, email: true, role: true } },
       },

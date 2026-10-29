@@ -47,7 +47,15 @@ export async function listMessages(user: AuthUser, ticketId: string) {
     where: { ticketId },
     orderBy: { createdAt: 'asc' },
     include: {
-      sender: { select: { id: true, name: true, role: true } },
+      sender: {
+        select: {
+          id: true,
+          name: true,
+          company: true,
+          role: true,
+          profilePictureUrl: true,
+        },
+      },
     },
   });
 
@@ -76,7 +84,16 @@ export async function sendMessage(
   const ticket = await prisma.ticket.findUnique({
     where: { id: ticketId },
     include: {
-      client: { select: { id: true, name: true, phone: true, role: true } },
+      client: {
+        select: {
+          id: true,
+          name: true,
+          company: true,
+          phone: true,
+          role: true,
+          profilePictureUrl: true,
+        },
+      },
       agent: { select: { id: true, name: true, email: true, role: true } },
       sector: { select: { id: true, name: true, slug: true } },
     },
@@ -109,7 +126,15 @@ export async function sendMessage(
       ...(data.attachment && { attachment: data.attachment as any }),
     },
     include: {
-      sender: { select: { id: true, name: true, role: true } },
+      sender: {
+        select: {
+          id: true,
+          name: true,
+          company: true,
+          role: true,
+          profilePictureUrl: true,
+        },
+      },
     },
   });
 

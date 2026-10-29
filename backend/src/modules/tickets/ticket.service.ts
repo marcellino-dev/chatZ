@@ -42,7 +42,16 @@ export async function createTicket(user: AuthUser, data: CreateTicketInput) {
     },
     include: {
       sector: { select: { id: true, name: true, slug: true } },
-      client: { select: { id: true, name: true, phone: true, role: true } },
+      client: {
+        select: {
+          id: true,
+          name: true,
+          company: true,
+          phone: true,
+          role: true,
+          profilePictureUrl: true,
+        },
+      },
       requestedAgent: { select: { id: true, name: true, email: true, role: true } },
     },
   });
@@ -86,7 +95,16 @@ export async function listTickets(user: AuthUser, query: ListTicketsQuery) {
     orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
     include: {
       sector: { select: { id: true, name: true, slug: true } },
-      client: { select: { id: true, name: true, phone: true, role: true } },
+      client: {
+        select: {
+          id: true,
+          name: true,
+          company: true,
+          phone: true,
+          role: true,
+          profilePictureUrl: true,
+        },
+      },
       agent: { select: { id: true, name: true, email: true, role: true } },
       requestedAgent: { select: { id: true, name: true, email: true, role: true } },
       participants: {
@@ -109,7 +127,16 @@ export async function getTicketById(user: AuthUser, id: string) {
     where: { id },
     include: {
       sector: { select: { id: true, name: true, slug: true } },
-      client: { select: { id: true, name: true, phone: true, role: true } },
+      client: {
+        select: {
+          id: true,
+          name: true,
+          company: true,
+          phone: true,
+          role: true,
+          profilePictureUrl: true,
+        },
+      },
       agent: { select: { id: true, name: true, email: true, role: true } },
       requestedAgent: { select: { id: true, name: true, email: true, role: true } },
       transfers: {
@@ -166,7 +193,16 @@ export async function assignTicket(user: AuthUser, id: string) {
     data: { agentId: user.id, status: 'IN_PROGRESS' },
     include: {
       sector: { select: { id: true, name: true, slug: true } },
-      client: { select: { id: true, name: true, phone: true, role: true } },
+      client: {
+        select: {
+          id: true,
+          name: true,
+          company: true,
+          phone: true,
+          role: true,
+          profilePictureUrl: true,
+        },
+      },
       agent: { select: { id: true, name: true, email: true, role: true } },
       requestedAgent: { select: { id: true, name: true, email: true, role: true } },
     },
@@ -210,7 +246,16 @@ export async function updateStatus(user: AuthUser, id: string, data: UpdateStatu
     },
     include: {
       sector: { select: { id: true, name: true, slug: true } },
-      client: { select: { id: true, name: true, phone: true, role: true } },
+      client: {
+        select: {
+          id: true,
+          name: true,
+          company: true,
+          phone: true,
+          role: true,
+          profilePictureUrl: true,
+        },
+      },
       agent: { select: { id: true, name: true, email: true, role: true } },
       requestedAgent: { select: { id: true, name: true, email: true, role: true } },
     },
@@ -249,7 +294,16 @@ export async function updatePriority(user: AuthUser, id: string, data: UpdatePri
     data: { priority: data.priority },
     include: {
       sector: { select: { id: true, name: true, slug: true } },
-      client: { select: { id: true, name: true, phone: true, role: true } },
+      client: {
+        select: {
+          id: true,
+          name: true,
+          company: true,
+          phone: true,
+          role: true,
+          profilePictureUrl: true,
+        },
+      },
       agent: { select: { id: true, name: true, email: true, role: true } },
       requestedAgent: { select: { id: true, name: true, email: true, role: true } },
     },
@@ -318,7 +372,16 @@ export async function addParticipant(
     where: { id: ticketId },
     include: {
       sector: { select: { id: true, name: true, slug: true } },
-      client: { select: { id: true, name: true, phone: true, role: true } },
+      client: {
+        select: {
+          id: true,
+          name: true,
+          company: true,
+          phone: true,
+          role: true,
+          profilePictureUrl: true,
+        },
+      },
       agent: { select: { id: true, name: true, email: true, role: true } },
       requestedAgent: { select: { id: true, name: true, email: true, role: true } },
       participants: {

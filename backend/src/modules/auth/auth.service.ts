@@ -37,6 +37,8 @@ export async function login(data: LoginInput) {
       name: user.name,
       email: user.email,
       role: user.role,
+      sectorId: user.sectorId,
+      profilePictureUrl: user.profilePictureUrl,
       sector: user.sector,
     },
   };
@@ -56,6 +58,7 @@ export async function me(userId: string) {
       role: true,
       active: true,
       sectorId: true,
+      profilePictureUrl: true,
       sector: {
         select: { id: true, name: true, slug: true },
       },
@@ -68,6 +71,46 @@ export async function me(userId: string) {
   }
 
   return user;
+}
+
+export async function updateProfilePicture(userId: string, url: string) {
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: { profilePictureUrl: url },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      phone: true,
+      role: true,
+      active: true,
+      sectorId: true,
+      profilePictureUrl: true,
+      sector: { select: { id: true, name: true, slug: true } },
+      createdAt: true,
+    },
+  });
+
+  return user;
+}
+
+export async function removeProfilePicture(userId: string) {
+  return prisma.user.update({
+    where: { id: userId },
+    data: { profilePictureUrl: null },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      phone: true,
+      role: true,
+      active: true,
+      sectorId: true,
+      profilePictureUrl: true,
+      sector: { select: { id: true, name: true, slug: true } },
+      createdAt: true,
+    },
+  });
 }
 
 // ==========================
@@ -125,6 +168,7 @@ export async function createUser(data: CreateUserInput) {
 // ==========================
 export async function listUsers() {
   const users = await prisma.user.findMany({
+    where: { role: 'AGENT' },
     orderBy: [{ role: 'asc' }, { name: 'asc' }],
     select: {
       id: true,

@@ -22,7 +22,7 @@ html, body, #root {
 
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background-color: #FAFBFC;
+  background-color: #FAF8F7;
   color: #0F172A;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -38,13 +38,13 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #F1F5F9;
+  background: #F8F6F5;
 }
 
 ::-webkit-scrollbar-thumb {
   background: #CBD5E1;
   border-radius: 5px;
-  border: 2px solid #F1F5F9;
+  border: 2px solid #F8F6F5;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -68,22 +68,22 @@ input:focus, button:focus, textarea:focus, select:focus {
 
 /* Gradiente principal — mais quente (azul → roxo → rosa → laranja) */
 .bg-chatz-gradient {
-  background: linear-gradient(135deg, #3B82F6 0%, #A855F7 25%, #EC4899 60%, #F97316 100%);
+  background: linear-gradient(135deg, #E719B5 0%, #EC4899 52%, #FF711D 100%);
 }
 
 /* Gradiente do botão (horizontal — igual referência) */
 .bg-chatz-button-gradient {
-  background: linear-gradient(90deg, #3B82F6 0%, #8B5CF6 40%, #EC4899 100%);
+  background: linear-gradient(90deg, #E719B5 0%, #FB3B86 54%, #FF711D 100%);
 }
 
 /* Gradiente suave (fundos de cards leves) */
 .bg-chatz-gradient-soft {
-  background: linear-gradient(135deg, #EFF6FF 0%, #FAF5FF 30%, #FDF2F8 60%, #FFF7ED 100%);
+  background: linear-gradient(135deg, #FFF0F8 0%, #FDF2F8 55%, #FFF7ED 100%);
 }
 
 /* Texto com gradiente — mesmo esquema do botão */
 .text-chatz-gradient {
-  background: linear-gradient(90deg, #3B82F6 0%, #A855F7 35%, #EC4899 65%, #F97316 100%);
+  background: linear-gradient(90deg, #3B82F6 0%, #A855F7 24%, #EC4899 58%, #F97316 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -123,4 +123,78 @@ select {
    ========================== */
 img {
   image-rendering: -webkit-optimize-contrast;
+}
+
+.login-panel {
+  background:
+    radial-gradient(ellipse at 70% 8%, rgba(116, 35, 83, 0.16), transparent 34%),
+    #0c0f15;
+}
+
+.login-panel-glow {
+  background: rgba(236, 72, 153, 0.12);
+  filter: blur(100px);
+}
+
+.login-panel-ring {
+  border: 2px solid rgba(249, 115, 22, 0.9);
+}
+
+.login-panel .login-input {
+  border-color: #343b49;
+  background-color: #1b2029;
+  color: #f8fafc;
+}
+
+.login-panel .login-input::placeholder {
+  color: #778194;
+}
+
+.login-panel .login-input:focus {
+  border-color: #ec4899;
+  box-shadow: 0 0 0 3px rgba(236, 72, 153, 0.16);
+}
+
+.login-panel label:not(.login-checkbox) {
+  color: #e2e8f0;
+}
+
+.login-panel .relative > span {
+  color: #94a3b8;
+}
+
+.login-panel .relative > button {
+  color: #94a3b8;
+}
+
+.login-panel .relative > button:hover {
+  color: #e2e8f0;
+}
+
+.login-checkbox > span:first-of-type {
+  border-color: #475569;
+}
+
+.login-checkbox > span:last-of-type {
+  color: #cbd5e1;
+}
+
+.login-checkbox input:checked + span:first-of-type {
+  border-color: #ec4899;
+  background-color: #ec4899;
+}
+
+.login-submit {
+  background: linear-gradient(100deg, #e719b5 0%, #fb3b86 54%, #ff711d 100%);
+  box-shadow: 0 8px 24px rgba(236, 72, 153, 0.2);
+}
+
+.login-submit:hover {
+  filter: brightness(1.08) saturate(1.05);
+}
+
+@media (min-width: 1024px) and (max-height: 820px) {
+  .login-test-shortcuts {
+    display: none;
+  }
 }

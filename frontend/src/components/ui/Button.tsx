@@ -16,7 +16,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 const VARIANTS: Record<Variant, string> = {
   primary:
     'bg-chatz-primary text-white hover:bg-chatz-primary-hover ' +
-    'shadow-[0_4px_14px_rgba(59,130,246,0.35)] hover:shadow-[0_8px_24px_rgba(59,130,246,0.40)]',
+    'shadow-[0_4px_14px_rgba(231,25,181,0.25)] hover:shadow-[0_8px_24px_rgba(231,25,181,0.30)]',
 
   gradient:
     'text-white bg-chatz-button-gradient ' +

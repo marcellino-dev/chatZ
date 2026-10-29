@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useTicketsStore } from '../../stores/tickets';
 import { useAuthStore } from '../../stores/auth';
 import { getSocket } from '../../lib/socket';
+import { ProfileAvatar } from '../ProfileAvatar';
 import {
   getTicketUnread,
   resetTicketUnread,
@@ -214,13 +215,6 @@ function ChatListItem({
     ? `${ticket._count.messages} mensagens`
     : 'Sem mensagens';
 
-  const initials = ticket.client.name
-    .split(' ')
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
-
   const time = new Date(ticket.updatedAt).toLocaleTimeString('pt-BR', {
     hour: '2-digit',
     minute: '2-digit',
@@ -239,10 +233,10 @@ function ChatListItem({
                   }`}
     >
       <div className="relative shrink-0">
-        <div className="w-11 h-11 rounded-full bg-gradient-to-br from-chatz-purple to-chatz-pink
-                        flex items-center justify-center text-white font-semibold text-sm">
-          {initials}
-        </div>
+        <ProfileAvatar
+          name={ticket.client.name}
+          pictureUrl={ticket.client.profilePictureUrl}
+        />
         {ticket.status === 'WAITING' && (
           <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-chatz-warning border-2 border-chatz-surface" />
         )}
@@ -253,9 +247,16 @@ function ChatListItem({
 
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline justify-between gap-2 mb-0.5">
-          <p className={`text-sm truncate ${unread > 0 ? 'font-bold text-chatz-text' : 'font-semibold text-chatz-text'}`}>
-            {ticket.client.name}
-          </p>
+          <div className="min-w-0">
+            <p className={`text-sm truncate ${unread > 0 ? 'font-bold text-chatz-text' : 'font-semibold text-chatz-text'}`}>
+              {ticket.client.name}
+            </p>
+            {ticket.client.company && (
+              <p className="truncate text-[10px] font-medium text-chatz-pink">
+                {ticket.client.company}
+              </p>
+            )}
+          </div>
           <span className={`text-[10px] shrink-0 ${unread > 0 ? 'text-chatz-primary font-bold' : 'text-chatz-text-subtle'}`}>
             {time}
           </span>

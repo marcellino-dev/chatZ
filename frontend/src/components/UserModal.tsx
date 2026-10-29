@@ -17,7 +17,6 @@ export function UserModal({ isOpen, user, onClose }: Props) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<'ADMIN' | 'AGENT'>('AGENT');
   const [sectorId, setSectorId] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -35,13 +34,11 @@ export function UserModal({ isOpen, user, onClose }: Props) {
       setName(user.name);
       setEmail(user.email ?? '');
       setPassword('');
-      setRole(user.role === 'ADMIN' ? 'ADMIN' : 'AGENT');
-      setSectorId(user.sectorId ?? '');
+      setSectorId(user.role === 'AGENT' ? user.sectorId ?? '' : '');
     } else {
       setName('');
       setEmail('');
       setPassword('');
-      setRole('AGENT');
       setSectorId('');
     }
     setError('');
@@ -56,11 +53,16 @@ export function UserModal({ isOpen, user, onClose }: Props) {
 
     try {
       if (isEdit && user) {
-        const updateData: any = { name, email, role, active: true };
+        const updateData: {
+          name: string;
+          email: string;
+          role: 'AGENT';
+          active: true;
+          password?: string;
+          sectorId?: string;
+        } = { name, email, role: 'AGENT', active: true, sectorId };
 
         if (password) updateData.password = password;
-        if (role === 'AGENT' && sectorId) updateData.sectorId = sectorId;
-        if (role === 'ADMIN') updateData.sectorId = null;
 
         await updateUser(user.id, updateData);
       } else {
@@ -68,8 +70,8 @@ export function UserModal({ isOpen, user, onClose }: Props) {
           name,
           email,
           password,
-          role,
-          sectorId: role === 'AGENT' ? sectorId : undefined,
+          role: 'AGENT',
+          sectorId,
         });
       }
       onClose();
@@ -91,7 +93,7 @@ export function UserModal({ isOpen, user, onClose }: Props) {
       >
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-chatz-text">
-            {isEdit ? 'Editar usuário' : 'Novo usuário'}
+            {isEdit ? 'Editar funcionário' : 'Adicionar funcionário'}
           </h2>
           <button
             onClick={onClose}
@@ -149,22 +151,6 @@ export function UserModal({ isOpen, user, onClose }: Props) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-chatz-muted mb-2">
-              Papel
-            </label>
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value as 'ADMIN' | 'AGENT')}
-              className="w-full px-4 py-3 bg-chatz-bg border border-chatz-border rounded-lg
-                         text-chatz-text focus:border-chatz-primary transition-all"
-            >
-              <option value="AGENT">🎧 Atendente</option>
-              <option value="ADMIN">👑 Administrador</option>
-            </select>
-          </div>
-
-          {role === 'AGENT' && (
-            <div>
               <label className="block text-sm font-medium text-chatz-muted mb-2">
                 Setor
               </label>
@@ -184,8 +170,7 @@ export function UserModal({ isOpen, user, onClose }: Props) {
                     </option>
                   ))}
               </select>
-            </div>
-          )}
+          </div>
 
           {error && (
             <div className="bg-chatz-danger/10 border border-chatz-danger/30 text-chatz-danger
@@ -211,7 +196,7 @@ export function UserModal({ isOpen, user, onClose }: Props) {
                          text-white font-semibold rounded-lg transition-all
                          disabled:opacity-50"
             >
-              {loading ? 'Salvando...' : isEdit ? 'Salvar' : 'Criar usuário'}
+              {loading ? 'Salvando...' : isEdit ? 'Salvar alterações' : 'Adicionar à equipe'}
             </button>
           </div>
         </form>

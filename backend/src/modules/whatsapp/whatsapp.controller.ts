@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
-import { processMessage } from '../bot/bot.service';
+import { prepareIncomingClient, processMessage } from '../bot/bot.service';
 import { downloadMediaFromWhatsApp } from './whatsapp.service';
+import { refreshWhatsAppProfilePicture } from './profile.service';
 
 export async function webhook(req: Request, res: Response) {
   try {
@@ -62,6 +63,8 @@ export async function webhook(req: Request, res: Response) {
       return res.status(200).json({ ok: true, empty: true });
     }
 
+    await prepareIncomingClient(phone);
+    await refreshWhatsAppProfilePicture(phone);
     await processMessage({
       phone,
       message: content,

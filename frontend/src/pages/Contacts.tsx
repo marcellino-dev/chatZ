@@ -1,12 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, getErrorMessage } from '../lib/api';
 import { IconBar } from '../components/chat/IconBar';
+import { PageBackButton } from '../components/PageBackButton';
 import { useAuthStore } from '../stores/auth';
 import type { Contact, Sector, Ticket } from '../types';
 
 export function Contacts() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -16,6 +18,7 @@ export function Contacts() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [startingContact, setStartingContact] = useState<Contact | null>(null);
+  const editContactId = searchParams.get('edit');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -41,6 +44,25 @@ export function Contacts() {
     };
   }, [refreshKey, search]);
 
+  useEffect(() => {
+    if (!editContactId) return;
+    let active = true;
+    api
+      .get<Contact>(`/contacts/${editContactId}`)
+      .then(({ data }) => {
+        if (!active) return;
+        setEditing(data);
+        setModalOpen(true);
+      })
+      .catch((requestError: unknown) => {
+        if (active) setError(getErrorMessage(requestError));
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [editContactId]);
+
   function openCreate() {
     setEditing(null);
     setModalOpen(true);
@@ -56,6 +78,13 @@ export function Contacts() {
     setEditing(null);
     setSearch('');
     setRefreshKey((key) => key + 1);
+    if (editContactId) setSearchParams({});
+  }
+
+  function closeContactModal() {
+    setModalOpen(false);
+    setEditing(null);
+    if (editContactId) setSearchParams({});
   }
 
   async function handleDelete(contact: Contact) {
@@ -78,12 +107,15 @@ export function Contacts() {
       <IconBar />
       <main className="flex-1 overflow-y-auto">
       <div className="max-w-6xl mx-auto px-6 py-8">
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-        <div>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <PageBackButton />
+          <div>
           <h1 className="text-2xl font-bold text-chatz-text">Contatos</h1>
           <p className="text-chatz-text-muted text-sm">
             Cadastro centralizado dos contatos de clientes
           </p>
+          </div>
         </div>
         <button
           onClick={openCreate}
@@ -194,7 +226,7 @@ export function Contacts() {
         <ContactModal
           key={editing?.id ?? 'new'}
           contact={editing}
-          onClose={() => setModalOpen(false)}
+          onClose={closeContactModal}
           onSaved={handleSaved}
         />
       )}

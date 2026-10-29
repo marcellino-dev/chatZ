@@ -4,22 +4,22 @@
 // ==========================
 
 export const colors = {
-  bg: '#FAFBFC',
+  bg: '#FAF8F7',
   surface: '#FFFFFF',
-  surfaceAlt: '#F8FAFC',
-  surfaceHover: '#F1F5F9',
+  surfaceAlt: '#F8F6F5',
+  surfaceHover: '#F3EFEE',
 
-  border: '#E5E7EB',
-  borderStrong: '#D1D5DB',
+  border: '#E9E1E0',
+  borderStrong: '#D6CBC9',
 
   text: '#0F172A',
   textMuted: '#64748B',
   textSubtle: '#94A3B8',
 
-  primary: '#3B82F6',
-  primaryHover: '#2563EB',
-  primaryLight: '#EFF6FF',
-  primaryBorder: '#BFDBFE',
+  primary: '#E719B5',
+  primaryHover: '#C91597',
+  primaryLight: '#FFF0F8',
+  primaryBorder: '#FBCFE8',
 
   purple: '#A855F7',
   purpleHover: '#9333EA',
@@ -51,20 +51,20 @@ export const colors = {
 
 export const gradients = {
   // Gradiente principal (mais quente)
-  primary: 'linear-gradient(135deg, #3B82F6 0%, #A855F7 25%, #EC4899 60%, #F97316 100%)',
+  primary: 'linear-gradient(135deg, #E719B5 0%, #EC4899 52%, #FF711D 100%)',
 
   // Gradiente do botão (horizontal)
-  button: 'linear-gradient(90deg, #3B82F6 0%, #8B5CF6 40%, #EC4899 100%)',
+  button: 'linear-gradient(90deg, #E719B5 0%, #FB3B86 54%, #FF711D 100%)',
 
   // Gradiente do texto
   text: 'linear-gradient(90deg, #3B82F6 0%, #A855F7 35%, #EC4899 65%, #F97316 100%)',
 
   // Gradiente suave (fundos)
   primarySoft:
-    'linear-gradient(135deg, #EFF6FF 0%, #FAF5FF 30%, #FDF2F8 60%, #FFF7ED 100%)',
+    'linear-gradient(135deg, #FFF0F8 0%, #FDF2F8 55%, #FFF7ED 100%)',
 
   // Variações curtas
-  blueToPurple: 'linear-gradient(135deg, #3B82F6 0%, #A855F7 100%)',
+  blueToPurple: 'linear-gradient(135deg, #E719B5 0%, #A855F7 100%)',
   purpleToPink: 'linear-gradient(135deg, #A855F7 0%, #EC4899 100%)',
   pinkToOrange: 'linear-gradient(135deg, #EC4899 0%, #F97316 100%)',
 } as const;
@@ -75,8 +75,8 @@ export const shadows = {
   lg: '0 8px 24px rgba(15, 23, 42, 0.08)',
   xl: '0 12px 32px rgba(15, 23, 42, 0.10)',
   '2xl': '0 24px 48px rgba(15, 23, 42, 0.12)',
-  primary: '0 4px 14px rgba(59, 130, 246, 0.35)',
-  'primary-lg': '0 8px 24px rgba(59, 130, 246, 0.40)',
+  primary: '0 4px 14px rgba(231, 25, 181, 0.25)',
+  'primary-lg': '0 8px 24px rgba(231, 25, 181, 0.30)',
   pink: '0 4px 14px rgba(236, 72, 153, 0.35)',
   'pink-lg': '0 8px 24px rgba(236, 72, 153, 0.45)',
 } as const;

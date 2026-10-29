@@ -7,7 +7,8 @@ import { api, getErrorMessage } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
 import { AttachmentPreview, type Attachment } from './AttachmentPreview';
 import { SimpleEmojiPicker } from './EmojiPicker';
-import type { Ticket, Message } from '../../types';
+import { ProfileAvatar } from '../ProfileAvatar';
+import type { Ticket, Message, QuickReply } from '../../types';
 
 interface Props {
   onToggleInfo: () => void;
@@ -42,6 +43,10 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [dragging, setDragging] = useState(false);
   const [typingUsers, setTypingUsers] = useState<Map<string, TypingUser>>(new Map());
+  const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
+  const [quickReplyError, setQuickReplyError] = useState('');
+  const [quickRepliesLoading, setQuickRepliesLoading] = useState(true);
+  const [activeQuickReply, setActiveQuickReply] = useState(0);
 
   const [emojiOpen, setEmojiOpen] = useState(false);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
@@ -67,6 +72,29 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   useEffect(() => {
     loadTicket();
   }, [id]);
+
+  useEffect(() => {
+    if (!user || user.role === 'CLIENT') return;
+    let active = true;
+    api
+      .get<QuickReply[]>('/quick-replies')
+      .then(({ data }) => {
+        if (active) {
+          setQuickReplies(data);
+          setQuickReplyError('');
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) setQuickReplyError(getErrorMessage(error));
+      })
+      .finally(() => {
+        if (active) setQuickRepliesLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!id) return;
@@ -179,6 +207,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   // Typing
   function handleInputChange(value: string) {
     setInput(value);
+    setActiveQuickReply(0);
 
     const socket = getSocket();
     if (!socket || !id) return;
@@ -204,6 +233,63 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
         isTypingRef.current = false;
       }
     }, 3000);
+  }
+
+  const slashMatch = /(^|\s)\/([^\s]*)$/.exec(input);
+  const slashQuery = slashMatch?.[2].toLocaleLowerCase() ?? '';
+  const quickReplyStart = slashMatch
+    ? input.length - slashMatch[0].length + slashMatch[1].length
+    : -1;
+  const matchingQuickReplies = slashMatch
+    ? quickReplies.filter((reply) =>
+        `${reply.title} ${reply.content}`.toLocaleLowerCase().includes(slashQuery)
+      )
+    : [];
+  const showQuickReplies = slashMatch !== null;
+
+  function chooseQuickReply(reply: QuickReply) {
+    const start = quickReplyStart;
+    if (start < 0) return;
+    const nextInput = `${input.slice(0, start)}${reply.content}`;
+    setInput(nextInput);
+    setActiveQuickReply(0);
+    const socket = getSocket();
+    if (socket && id && !isTypingRef.current) {
+      socket.emit('typing:start', { ticketId: id });
+      isTypingRef.current = true;
+    }
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.setSelectionRange(nextInput.length, nextInput.length);
+    });
+  }
+
+  function handleComposerKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (!showQuickReplies || matchingQuickReplies.length === 0) {
+      if (event.key === 'Escape') setActiveQuickReply(0);
+      return;
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setActiveQuickReply((index) => (index + 1) % matchingQuickReplies.length);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActiveQuickReply(
+        (index) => (index - 1 + matchingQuickReplies.length) % matchingQuickReplies.length
+      );
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      chooseQuickReply(matchingQuickReplies[activeQuickReply]);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      const currentMatch = /(^|\s)\/([^\s]*)$/.exec(input);
+      if (currentMatch) {
+        const start = input.length - currentMatch[0].length + currentMatch[1].length;
+        setInput(input.slice(0, start));
+      }
+      setActiveQuickReply(0);
+    }
   }
 
   // Emoji
@@ -395,13 +481,6 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     !ticket.agentId && (user?.role === 'AGENT' || user?.role === 'ADMIN');
   const canSend = isMine || isParticipant;
 
-  const initials = ticket.client.name
-    .split(' ')
-    .map((n) => n[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
-
   const hasText = input.trim().length > 0;
   const hasUploading = pendingFiles.some((p) => p.uploading);
   const canSubmit =
@@ -435,13 +514,20 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
           onClick={onToggleInfo}
           className="flex items-center gap-3 hover:bg-chatz-surface-hover rounded-chatz px-2 py-1 transition-all min-w-0"
         >
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-chatz-purple to-chatz-pink flex items-center justify-center text-white font-semibold text-sm shrink-0">
-            {initials}
-          </div>
+          <ProfileAvatar
+            name={ticket.client.name}
+            pictureUrl={ticket.client.profilePictureUrl}
+            sizeClass="w-10 h-10"
+          />
           <div className="text-left min-w-0">
             <p className="text-sm font-semibold text-chatz-text truncate">
               {ticket.client.name}
             </p>
+            {ticket.client.company && (
+              <p className="text-[10px] font-medium text-chatz-pink truncate">
+                {ticket.client.company}
+              </p>
+            )}
             <p className="text-xs text-chatz-text-muted truncate">
               {typingText ? (
                 <span className="text-chatz-primary italic">{typingText}</span>
@@ -621,19 +707,65 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
                 <EmojiIcon />
               </button>
 
-              <input
-                ref={inputRef}
-                type="text"
-                value={input}
-                onChange={(e) => handleInputChange(e.target.value)}
-                placeholder={
-                  pendingFiles.length > 0
-                    ? 'Legenda (opcional, vai no primeiro arquivo)'
-                    : 'Digite sua mensagem...'
-                }
-                disabled={sending}
-                className="flex-1 px-4 py-2.5 bg-chatz-surface-alt border border-chatz-border rounded-full text-sm text-chatz-text placeholder:text-chatz-text-subtle focus:border-chatz-primary focus:ring-2 focus:ring-chatz-primary/20 transition-all"
-              />
+              <div className="relative flex-1 min-w-0">
+                {showQuickReplies && (
+                  <div className="absolute bottom-full left-0 right-0 mb-2 z-50
+                                  max-h-72 overflow-y-auto bg-chatz-surface
+                                  border border-chatz-border rounded-chatz-xl
+                                  shadow-chatz-lg">
+                    {matchingQuickReplies.length > 0 ? (
+                      matchingQuickReplies.map((reply, index) => (
+                        <button
+                          key={reply.id}
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => chooseQuickReply(reply)}
+                          className={`w-full text-left px-4 py-3 border-b
+                                      border-chatz-border last:border-0
+                                      ${index === activeQuickReply
+                                        ? 'bg-chatz-primary-light'
+                                        : 'hover:bg-chatz-surface-hover'}`}
+                        >
+                          <span className="block text-sm font-semibold
+                                           text-chatz-text">{reply.title}</span>
+                          <span className="block text-xs text-chatz-text-muted
+                                           truncate mt-1">{reply.content}</span>
+                        </button>
+                      ))
+                    ) : quickRepliesLoading && user?.role !== 'CLIENT' ? (
+                      <p className="px-4 py-3 text-sm text-chatz-text-muted">
+                        Carregando respostas prontas...
+                      </p>
+                    ) : quickReplyError ? (
+                      <p role="alert" className="px-4 py-3 text-sm text-chatz-danger">
+                        {quickReplyError}
+                      </p>
+                    ) : (
+                      <p className="px-4 py-3 text-sm text-chatz-text-muted">
+                        Nenhuma resposta encontrada. Cadastre uma em “Respostas prontas”.
+                      </p>
+                    )}
+                  </div>
+                )}
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={input}
+                  onChange={(e) => handleInputChange(e.target.value)}
+                  onKeyDown={handleComposerKeyDown}
+                  placeholder={
+                    pendingFiles.length > 0
+                      ? 'Legenda (opcional, vai no primeiro arquivo)'
+                      : 'Digite sua mensagem...'
+                  }
+                  disabled={sending}
+                  className="w-full px-4 py-2.5 bg-chatz-surface-alt border
+                             border-chatz-border rounded-full text-sm
+                             text-chatz-text placeholder:text-chatz-text-subtle
+                             focus:border-chatz-primary focus:ring-2
+                             focus:ring-chatz-primary/20 transition-all"
+                />
+              </div>
 
               <button
                 type="submit"
@@ -668,7 +800,15 @@ function MessageBubble({ message, isAgent }: { message: Message; isAgent: boolea
   const hasContent = message.content?.trim().length > 0;
 
   return (
-    <div className={`flex ${isAgent ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+    <div className={`flex items-end gap-2 ${isAgent ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+      {!isAgent && (
+        <ProfileAvatar
+          name={message.sender.name}
+          pictureUrl={message.sender.profilePictureUrl}
+          sizeClass="w-7 h-7"
+          textClass="text-[9px]"
+        />
+      )}
       <div className={`max-w-[70%] rounded-2xl ${isAgent ? 'bg-chatz-button-gradient text-white rounded-br-sm shadow-[0_2px_8px_rgba(236,72,153,0.20)]' : 'bg-chatz-surface border border-chatz-border text-chatz-text rounded-bl-sm'} ${attachment && !hasContent ? 'p-2' : 'px-3.5 py-2'}`}>
         <p
           className={`text-xs font-semibold mb-0.5 px-1.5 pt-0.5 ${
@@ -677,6 +817,11 @@ function MessageBubble({ message, isAgent }: { message: Message; isAgent: boolea
         >
           {message.sender.name}
         </p>
+        {message.sender.company && (
+          <p className="px-1.5 text-[10px] font-medium text-chatz-pink">
+            {message.sender.company}
+          </p>
+        )}
         {attachment && (
           <div className={hasContent ? 'mb-2' : ''}>
             <AttachmentPreview attachment={attachment} isMine={isAgent} />
@@ -687,6 +832,14 @@ function MessageBubble({ message, isAgent }: { message: Message; isAgent: boolea
         )}
         <p className={`text-[10px] mt-1 text-right px-1 ${isAgent ? 'text-white/70' : 'text-chatz-text-subtle'}`}>{time}</p>
       </div>
+      {isAgent && (
+        <ProfileAvatar
+          name={message.sender.name}
+          pictureUrl={message.sender.profilePictureUrl}
+          sizeClass="w-7 h-7"
+          textClass="text-[9px]"
+        />
+      )}
     </div>
   );
 }

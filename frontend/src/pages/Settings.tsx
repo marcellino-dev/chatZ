@@ -1,9 +1,14 @@
-import { useState } from 'react';
+import { useRef, useState, type ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../stores/settings';
 import { useAuthStore } from '../stores/auth';
 import { requestNotificationPermission } from '../lib/notifications';
 import { playDing, playNotification } from '../lib/sounds';
+import { api, getErrorMessage } from '../lib/api';
+import { ProfileAvatar } from '../components/ProfileAvatar';
+import { IconBar } from '../components/chat/IconBar';
+import { PageBackButton } from '../components/PageBackButton';
+import type { User } from '../types';
 
 type Section =
   | 'profile'
@@ -25,9 +30,8 @@ const SECTIONS: { key: Section; label: string; icon: React.ReactNode; descriptio
 ];
 
 export function Settings() {
-  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
-  const [section, setSection] = useState<Section>('notifications');
+  const [section, setSection] = useState<Section>('profile');
   const [permission, setPermission] = useState<NotificationPermission>(
     'Notification' in window ? Notification.permission : 'denied'
   );
@@ -40,22 +44,18 @@ export function Settings() {
   if (!user) return null;
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-chatz-bg overflow-hidden">
-      <header className="bg-chatz-surface border-b border-chatz-border px-6 py-4 flex items-center gap-4 shrink-0">
-        <button
-          onClick={() => navigate('/chat')}
-          className="w-10 h-10 rounded-chatz flex items-center justify-center
-                     hover:bg-chatz-surface-hover transition-all text-chatz-text-muted"
-        >
-          <BackIcon />
-        </button>
-        <div>
-          <h1 className="text-xl font-display font-extrabold text-chatz-text">Configurações</h1>
-          <p className="text-xs text-chatz-text-muted">chatZ — {user.name}</p>
-        </div>
-      </header>
+    <div className="flex h-screen w-screen overflow-hidden bg-chatz-bg">
+      <IconBar />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex shrink-0 items-center gap-4 border-b border-chatz-border bg-chatz-surface px-6 py-4">
+          <PageBackButton />
+          <div>
+            <h1 className="text-xl font-display font-extrabold text-chatz-text">Configurações</h1>
+            <p className="text-xs text-chatz-text-muted">chatZ — {user.name}</p>
+          </div>
+        </header>
 
-      <div className="flex-1 flex overflow-hidden">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
         <aside className="w-[340px] bg-chatz-surface border-r border-chatz-border overflow-y-auto shrink-0">
           <nav className="py-2">
             {SECTIONS.map((s) => (
@@ -99,23 +99,112 @@ export function Settings() {
           </div>
         </main>
       </div>
+      </div>
     </div>
   );
 }
 
-function ProfileSection({ user }: { user: any }) {
+function ProfileSection({ user }: { user: User }) {
+  const setUser = useAuthStore((state) => state.setUser);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingPicture, setUploadingPicture] = useState(false);
+  const [pictureError, setPictureError] = useState('');
+
+  async function handlePictureChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setPictureError('Escolha uma imagem JPG, PNG ou WEBP.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setPictureError('A imagem deve ter no máximo 5 MB.');
+      return;
+    }
+
+    setUploadingPicture(true);
+    setPictureError('');
+    try {
+      const body = new FormData();
+      body.append('file', file);
+      const { data } = await api.post<User>('/auth/me/profile-picture', body, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setUser(data);
+    } catch (error) {
+      setPictureError(getErrorMessage(error));
+    } finally {
+      setUploadingPicture(false);
+    }
+  }
+
+  async function handleRemovePicture() {
+    if (!user.profilePictureUrl) return;
+    if (!confirm('Remover sua foto de perfil?')) return;
+
+    setUploadingPicture(true);
+    setPictureError('');
+    try {
+      const { data } = await api.delete<User>('/auth/me/profile-picture');
+      setUser(data);
+    } catch (error) {
+      setPictureError(getErrorMessage(error));
+    } finally {
+      setUploadingPicture(false);
+    }
+  }
+
   return (
     <div>
       <SectionTitle icon="👤" title="Perfil" description="Suas informações pessoais" />
       <div className="flex items-center gap-4 mb-6">
-        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-chatz-purple to-chatz-pink
-                        flex items-center justify-center text-white font-bold text-2xl">
-          {user.name.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()}
-        </div>
+        <ProfileAvatar
+          name={user.name}
+          pictureUrl={user.profilePictureUrl}
+          sizeClass="w-20 h-20"
+          textClass="text-2xl"
+        />
         <div>
           <p className="text-lg font-semibold text-chatz-text">{user.name}</p>
           <p className="text-sm text-chatz-text-muted">{user.role === 'ADMIN' ? '👑 Administrador' : '🎧 Atendente'}</p>
           {user.sector && <p className="text-sm text-chatz-text-muted">🏢 {user.sector.name}</p>}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={handlePictureChange}
+          />
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={uploadingPicture}
+              onClick={() => fileInputRef.current?.click()}
+              className="rounded-chatz border border-chatz-primary-border px-3 py-1.5
+                         text-xs font-medium text-chatz-primary hover:bg-chatz-primary-light
+                         disabled:opacity-50"
+            >
+              {uploadingPicture ? 'Enviando foto...' : user.profilePictureUrl ? 'Alterar foto' : 'Adicionar foto'}
+            </button>
+            {user.profilePictureUrl && (
+              <button
+                type="button"
+                disabled={uploadingPicture}
+                onClick={handleRemovePicture}
+                className="rounded-chatz border border-chatz-danger-border px-3 py-1.5
+                           text-xs font-medium text-chatz-danger hover:bg-chatz-danger-light
+                           disabled:opacity-50"
+              >
+                Remover foto
+              </button>
+            )}
+          </div>
+          {pictureError && (
+            <p role="alert" className="text-xs text-chatz-danger mt-2">
+              {pictureError}
+            </p>
+          )}
         </div>
       </div>
       <InfoRow label="Nome" value={user.name} />
@@ -413,9 +502,6 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
   );
 }
 
-function BackIcon() {
-  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>);
-}
 function UserIcon() {
   return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>);
 }

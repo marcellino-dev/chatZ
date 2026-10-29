@@ -1,9 +1,15 @@
 import { useEffect, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { UserModal } from '../components/UserModal';
+import { IconBar } from '../components/chat/IconBar';
+import { PageBackButton } from '../components/PageBackButton';
+import { useAuthStore } from '../stores/auth';
+import { ProfileAvatar } from '../components/ProfileAvatar';
 import type { User } from '../types';
 
 export function Users() {
+  const currentUser = useAuthStore((state) => state.user);
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -24,8 +30,10 @@ export function Users() {
   }
 
   useEffect(() => {
-    loadUsers();
-  }, []);
+    if (currentUser?.role === 'ADMIN') loadUsers();
+  }, [currentUser]);
+
+  if (currentUser?.role !== 'ADMIN') return <Navigate to="/chat" replace />;
 
   function handleCreate() {
     setEditing(null);
@@ -53,124 +61,171 @@ export function Users() {
     }
   }
 
-  const roleLabel = (role: string) =>
-    role === 'ADMIN' ? '👑 Admin' : role === 'AGENT' ? '🎧 Atendente' : '👤 Cliente';
-
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-chatz-text">Usuários</h1>
-          <p className="text-chatz-muted text-sm">
-            Gerencie atendentes e administradores
-          </p>
-        </div>
+    <div className="flex h-screen w-screen overflow-hidden bg-chatz-bg">
+      <IconBar />
+      <main className="flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-6xl px-6 py-8">
+          <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <PageBackButton />
+              <div>
+                <h1 className="text-2xl font-bold text-chatz-text">Equipe</h1>
+                <p className="text-sm text-chatz-text-muted">
+                  Gerencie atendentes e funcionários
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleCreate}
+              className="rounded-xl bg-chatz-button-gradient px-5 py-2.5
+                         font-semibold text-white shadow-primary transition hover:brightness-105"
+            >
+              + Adicionar funcionário
+            </button>
+          </div>
 
-        <button
-          onClick={handleCreate}
-          className="px-5 py-2.5 bg-chatz-primary hover:bg-chatz-primary-hover
-                     text-white font-medium rounded-lg transition-all"
-        >
-          ➕ Novo usuário
-        </button>
-      </div>
+          {loading && (
+            <div className="py-16 text-center text-sm text-chatz-text-muted">
+              Carregando equipe...
+            </div>
+          )}
 
-      {loading && (
-        <div className="text-center py-16 text-chatz-muted">Carregando...</div>
-      )}
+          {error && (
+            <div role="alert" className="mb-6 rounded-xl border border-chatz-danger-border
+                                        bg-chatz-danger-light px-4 py-3 text-sm text-chatz-danger">
+              {error}
+            </div>
+          )}
 
-      {error && (
-        <div className="bg-chatz-danger/10 border border-chatz-danger/30 text-chatz-danger
-                        rounded-lg px-4 py-3 mb-6">
-          {error}
-        </div>
-      )}
+          {!loading && !error && users.length === 0 && (
+            <div className="rounded-2xl border border-dashed border-chatz-border
+                            bg-chatz-surface px-6 py-16 text-center">
+              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center
+                              rounded-2xl bg-chatz-primary-light text-chatz-primary">
+                <TeamIcon />
+              </div>
+              <h2 className="font-semibold text-chatz-text">Sua equipe está vazia</h2>
+              <p className="mt-1 text-sm text-chatz-text-muted">
+                Adicione atendentes para começar a organizar os funcionários.
+              </p>
+              <button
+                onClick={handleCreate}
+                className="mt-5 rounded-xl bg-chatz-button-gradient px-4 py-2
+                           text-sm font-semibold text-white hover:brightness-105"
+              >
+                Adicionar primeiro funcionário
+              </button>
+            </div>
+          )}
 
-      {!loading && users.length > 0 && (
-        <div className="bg-chatz-card border border-chatz-border rounded-xl overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-chatz-bg border-b border-chatz-border">
-              <tr>
-                <th className="text-left px-5 py-3 text-xs font-medium text-chatz-muted uppercase tracking-wide">
-                  Nome
-                </th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-chatz-muted uppercase tracking-wide">
-                  Email
-                </th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-chatz-muted uppercase tracking-wide">
-                  Papel
-                </th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-chatz-muted uppercase tracking-wide">
-                  Setor
-                </th>
-                <th className="text-right px-5 py-3 text-xs font-medium text-chatz-muted uppercase tracking-wide">
-                  Ações
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((user) => (
-                <tr
-                  key={user.id}
-                  className={`border-b border-chatz-border last:border-0 ${
-                    user.active ? '' : 'opacity-50'
-                  }`}
-                >
-                  <td className="px-5 py-4">
-                    <p className="text-chatz-text text-sm font-medium">
-                      {user.name}
-                    </p>
-                    {!user.active && (
-                      <span className="text-xs text-chatz-muted">
-                        Desativado
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-5 py-4 text-chatz-muted text-sm">
-                    {user.email ?? '—'}
-                  </td>
-                  <td className="px-5 py-4 text-sm">{roleLabel(user.role)}</td>
-                  <td className="px-5 py-4 text-chatz-muted text-sm">
-                    {user.sector?.name ?? '—'}
-                  </td>
-                  <td className="px-5 py-4 text-right">
-                    <div className="flex gap-2 justify-end">
+          {!loading && !error && users.length > 0 && (
+            <div className="overflow-hidden rounded-2xl border border-chatz-border
+                            bg-chatz-surface shadow-chatz-sm">
+              <div className="flex items-center justify-between border-b border-chatz-border
+                              bg-chatz-surface-alt px-5 py-4">
+                <div>
+                  <h2 className="font-semibold text-chatz-text">Funcionários</h2>
+                  <p className="mt-0.5 text-xs text-chatz-text-muted">
+                    {users.length} {users.length === 1 ? 'atendente cadastrado' : 'atendentes cadastrados'}
+                  </p>
+                </div>
+                <TeamIcon />
+              </div>
+              <div className="divide-y divide-chatz-border">
+                {users.map((user) => (
+                  <article
+                    key={user.id}
+                    className={`flex flex-wrap items-center justify-between gap-4 px-5 py-4
+                                transition-colors hover:bg-chatz-surface-alt/70 ${
+                                  user.active ? '' : 'opacity-60'
+                                }`}
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <ProfileAvatar
+                        name={user.name}
+                        pictureUrl={user.profilePictureUrl}
+                        sizeClass="h-12 w-12"
+                        textClass="text-sm"
+                      />
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="truncate text-sm font-semibold text-chatz-text">
+                            {user.name}
+                          </h3>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                            user.active
+                              ? 'bg-chatz-success-light text-chatz-success'
+                              : 'bg-chatz-surface-hover text-chatz-text-muted'
+                          }`}>
+                            {user.active ? 'Ativo' : 'Desativado'}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 truncate text-xs text-chatz-text-muted">
+                          {user.email ?? 'Sem e-mail'}
+                        </p>
+                        <p className="mt-1 text-xs font-medium text-chatz-primary">
+                          {user.sector?.name ?? 'Sem setor'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
                       <button
                         onClick={() => handleEdit(user)}
-                        className="px-3 py-1.5 bg-chatz-bg hover:bg-chatz-card-hover
-                                   border border-chatz-border text-chatz-text
-                                   text-xs font-medium rounded-lg transition-all"
+                        className="rounded-lg border border-chatz-border px-3 py-2
+                                   text-xs font-semibold text-chatz-text transition
+                                   hover:border-chatz-primary-border hover:bg-chatz-primary-light
+                                   hover:text-chatz-primary"
                       >
                         Editar
                       </button>
                       <button
                         onClick={() => handleToggleActive(user)}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-lg
-                                   transition-all border ${
-                                     user.active
-                                       ? 'bg-chatz-danger/10 hover:bg-chatz-danger/20 border-chatz-danger/30 text-chatz-danger'
-                                       : 'bg-chatz-success/10 hover:bg-chatz-success/20 border-chatz-success/30 text-chatz-success'
-                                   }`}
+                        className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                          user.active
+                            ? 'border-chatz-danger-border text-chatz-danger hover:bg-chatz-danger-light'
+                            : 'border-chatz-success-border text-chatz-success hover:bg-chatz-success-light'
+                        }`}
                       >
                         {user.active ? 'Desativar' : 'Reativar'}
                       </button>
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+                  </article>
+                ))}
+              </div>
+            </div>
+          )}
 
-      <UserModal
-        isOpen={modalOpen}
-        user={editing}
-        onClose={() => {
-          setModalOpen(false);
-          loadUsers();
-        }}
-      />
+          <UserModal
+            isOpen={modalOpen}
+            user={editing}
+            onClose={() => {
+              setModalOpen(false);
+              loadUsers();
+            }}
+          />
+        </div>
+      </main>
     </div>
+  );
+}
+
+function TeamIcon() {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
   );
 }

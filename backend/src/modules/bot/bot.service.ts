@@ -2,6 +2,11 @@ import { prisma } from '../../config/prisma';
 import * as msg from './bot.messages';
 import { emitToSector, emitToUser, emitToTicket } from '../../sockets/socket.server';
 import { sendWhatsAppMessage } from '../whatsapp/whatsapp.service';
+import {
+  findClientUsersByPhone,
+  findContactByPhone,
+  syncContactIdentity,
+} from '../contacts/contactIdentity.service';
 
 interface BotInput {
   phone: string;
@@ -267,7 +272,16 @@ async function handleAgentChoice(conversation: any, message: string): Promise<Bo
     },
     include: {
       sector: { select: { id: true, name: true, slug: true } },
-      client: { select: { id: true, name: true, phone: true, role: true } },
+      client: {
+        select: {
+          id: true,
+          name: true,
+          company: true,
+          phone: true,
+          role: true,
+          profilePictureUrl: true,
+        },
+      },
       requestedAgent: { select: { id: true, name: true, email: true, role: true } },
     },
   });
@@ -336,7 +350,13 @@ async function handleInAttendance(
     },
     include: {
       sender: {
-        select: { id: true, name: true, role: true },
+        select: {
+          id: true,
+          name: true,
+          company: true,
+          role: true,
+          profilePictureUrl: true,
+        },
       },
     },
   });
@@ -364,18 +384,30 @@ function normalizePhone(phone: string): string {
   return phone.replace(/\D/g, '');
 }
 
+export async function prepareIncomingClient(phone: string) {
+  await ensureClientUser(normalizePhone(phone));
+}
+
 async function ensureClientUser(phone: string) {
-  let user = await prisma.user.findUnique({ where: { phone } });
+  const contact = await findContactByPhone(phone);
+  const clients = await findClientUsersByPhone(phone);
+  let user = clients[0] ?? null;
 
   if (!user) {
     user = await prisma.user.create({
       data: {
-        name: `Cliente ${phone.slice(-4)}`,
+        name: contact?.name ?? `Cliente ${phone.slice(-4)}`,
+        company: contact?.company ?? null,
         phone,
         role: 'CLIENT',
       },
     });
     console.log(`👤 Cliente criado: ${user.name} (${user.phone})`);
+  }
+
+  if (contact) {
+    const syncedClients = await syncContactIdentity(contact);
+    user = syncedClients.find((client) => client.id === user?.id) ?? user;
   }
 
   return user;

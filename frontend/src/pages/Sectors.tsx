@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useSectorsStore } from '../stores/sectors';
 import { SectorModal } from '../components/SectorModal';
+import { IconBar } from '../components/chat/IconBar';
+import { PageBackButton } from '../components/PageBackButton';
 import type { Sector } from '../types';
 
 export function Sectors() {
@@ -43,13 +45,19 @@ export function Sectors() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8">
+    <div className="flex h-screen w-screen overflow-hidden bg-chatz-bg">
+      <IconBar />
+      <main className="flex-1 overflow-y-auto">
+      <div className="max-w-6xl mx-auto px-6 py-8">
       <div className="flex items-center justify-between mb-6">
-        <div>
+        <div className="flex items-center gap-3">
+          <PageBackButton />
+          <div>
           <h1 className="text-2xl font-bold text-chatz-text">Setores</h1>
           <p className="text-chatz-muted text-sm">
             Gerencie os setores de atendimento
           </p>
+          </div>
         </div>
 
         <button
@@ -162,6 +170,8 @@ export function Sectors() {
         sector={editing}
         onClose={() => setModalOpen(false)}
       />
+      </div>
+      </main>
     </div>
   );
 }

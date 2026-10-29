@@ -29,6 +29,11 @@ export const updateContactSchema = z
     message: 'Informe ao menos um campo para atualizar',
   });
 
+export const saveTicketContactSchema = z.object({
+  name: nameSchema.optional(),
+  company: companySchema.optional(),
+});
+
 export const listContactsSchema = z.object({
   q: z.string().trim().max(100).optional(),
 });
@@ -38,4 +43,5 @@ export const startConversationSchema = z.object({
 });
 
 export type CreateContactInput = z.infer<typeof createContactSchema>;
+export type SaveTicketContactInput = z.infer<typeof saveTicketContactSchema>;
 export type UpdateContactInput = z.infer<typeof updateContactSchema>;

@@ -16,11 +16,11 @@ export const createUserSchema = z
     name: z.string().min(2, 'Nome muito curto').max(80),
     email: z.string().email('Email inválido').toLowerCase(),
     password: z.string().min(6, 'Senha deve ter no mínimo 6 caracteres'),
-    role: z.enum(['ADMIN', 'AGENT']), // não cria CLIENT via API
+    role: z.literal('AGENT'),
     sectorId: z.string().optional(),
   })
   .refine(
-    (data) => data.role !== 'AGENT' || !!data.sectorId,
+    (data) => !!data.sectorId,
     {
       message: 'Atendente precisa ter um setor',
       path: ['sectorId'],
