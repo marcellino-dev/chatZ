@@ -41,6 +41,7 @@ export interface Contact {
   company: string | null;
   createdAt: string;
   updatedAt: string;
+  tags?: Tag[];
 }
 
 export interface AuthResponse {
@@ -108,8 +109,25 @@ export interface Ticket {
 
   transfers?: Transfer[];
   participants?: TicketParticipant[];
+  notes?: TicketNote[];
+  tags?: Tag[];
 
   _count?: { messages: number };
+}
+
+export interface Tag {
+  id: string;
+  name: string;
+}
+
+export interface TicketNote {
+  id: string;
+  content: string;
+  ticketId: string;
+  authorId: string;
+  createdAt: string;
+  updatedAt: string;
+  author: Pick<User, 'id' | 'name' | 'role'>;
 }
 
 // ==========================

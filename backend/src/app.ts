@@ -10,6 +10,7 @@ import uploadRoutes from './modules/uploads/upload.routes';
 import contactRoutes from './modules/contacts/contact.routes';
 import quickReplyRoutes from './modules/quickReplies/quickReply.routes';
 import stickerRoutes from './modules/stickers/sticker.routes';
+import tagRoutes from './modules/tags/tag.routes';
 import { errorHandler } from './middlewares/errorHandler';
 
 const app = express();
@@ -37,6 +38,7 @@ app.use('/sectors', sectorRoutes);
 app.use('/contacts', contactRoutes);
 app.use('/quick-replies', quickReplyRoutes);
 app.use('/stickers', stickerRoutes);
+app.use('/tags', tagRoutes);
 app.use('/bot', botRoutes);
 app.use('/whatsapp', whatsappRoutes);
 app.use('/uploads', uploadRoutes);

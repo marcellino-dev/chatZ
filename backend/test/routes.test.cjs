@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const bcrypt = require('bcryptjs');
 const { execFileSync } = require('node:child_process');
 const http = require('node:http');
 const path = require('node:path');
@@ -109,6 +110,12 @@ const routes = [
   ['GET', '/tickets/test-ticket/participants', 401],
   ['POST', '/tickets/test-ticket/participants', 401],
   ['DELETE', '/tickets/test-ticket/participants/test-user', 401],
+  ['GET', '/tickets/test-ticket/notes', 401],
+  ['POST', '/tickets/test-ticket/notes', 401],
+  ['PATCH', '/tickets/test-ticket/notes/test-note', 401],
+  ['DELETE', '/tickets/test-ticket/notes/test-note', 401],
+  ['POST', '/tickets/test-ticket/tags', 401],
+  ['DELETE', '/tickets/test-ticket/tags/test-tag', 401],
   ['GET', '/tickets/test-ticket/messages', 401],
   ['POST', '/tickets/test-ticket/messages', 401],
   ['GET', '/tickets/test-ticket/transfers', 401],
@@ -121,6 +128,8 @@ const routes = [
   ['GET', '/contacts', 401],
   ['GET', '/contacts/from-ticket/test-ticket', 401],
   ['GET', '/contacts/test-contact', 401],
+  ['POST', '/contacts/test-contact/tags/test-tag', 401],
+  ['DELETE', '/contacts/test-contact/tags/test-tag', 401],
   ['POST', '/contacts', 401],
   ['POST', '/contacts/from-ticket/test-ticket', 401],
   ['PATCH', '/contacts/test-contact', 401],
@@ -128,6 +137,7 @@ const routes = [
   ['POST', '/contacts/test-contact/start-conversation', 401],
   ['GET', '/quick-replies', 401],
   ['GET', '/stickers', 401],
+  ['GET', '/tags', 401],
   ['POST', '/stickers/from-message', 401],
   ['POST', '/quick-replies', 401],
   ['PATCH', '/quick-replies/test-reply', 401],
@@ -214,6 +224,37 @@ test('agents can update only their own status and admins cannot use the agent st
     body: JSON.stringify({ status: 'BUSY' }),
   });
   assert.equal(forbiddenResponse.status, 403);
+});
+
+test('successful agent login returns an offline agent to online status', async () => {
+  const password = 'test-password';
+  const agent = await prisma.user.create({
+    data: {
+      name: 'Atendente offline',
+      role: 'AGENT',
+      email: `offline-agent-${process.pid}@test.invalid`,
+      password: await bcrypt.hash(password, 10),
+      status: 'OFFLINE',
+      statusChangedAt: new Date('2025-01-01T00:00:00.000Z'),
+    },
+  });
+
+  const response = await fetch(`${baseUrl}/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: agent.email, password }),
+  });
+
+  assert.equal(response.status, 200);
+  const { user } = await response.json();
+  assert.equal(user.status, 'ONLINE');
+  assert.ok(new Date(user.statusChangedAt) > new Date('2025-01-01T00:00:00.000Z'));
+
+  const persistedAgent = await prisma.user.findUniqueOrThrow({
+    where: { id: agent.id },
+  });
+  assert.equal(persistedAgent.status, 'ONLINE');
+  assert.equal(persistedAgent.statusChangedAt.toISOString(), user.statusChangedAt);
 });
 
 test('health and public webhook endpoints return their documented payloads', async () => {
@@ -445,6 +486,314 @@ test('agents only see and claim waiting tickets in their sector or addressed to 
     { method: 'PATCH', headers: noSectorHeaders },
   );
   assert.equal(noSectorAssignResponse.status, 403);
+});
+
+test('agents can create internal notes only on accessible open tickets', async () => {
+  const queueTicket = await prisma.ticket.create({
+    data: {
+      subject: 'Atendimento na fila com nota',
+      status: 'WAITING',
+      sectorId: fixture.sector.id,
+      clientId: fixture.client.id,
+    },
+  });
+  const closedTicket = await prisma.ticket.create({
+    data: {
+      subject: 'Atendimento encerrado com nota',
+      status: 'IN_PROGRESS',
+      sectorId: fixture.sector.id,
+      clientId: fixture.client.id,
+      agentId: fixture.owner.id,
+    },
+  });
+  const ownerHeaders = {
+    authorization: `Bearer ${signToken({
+      sub: fixture.owner.id,
+      role: 'AGENT',
+    })}`,
+    'content-type': 'application/json',
+  };
+  const colleagueHeaders = {
+    authorization: `Bearer ${signToken({
+      sub: fixture.otherAgent.id,
+      role: 'AGENT',
+    })}`,
+    'content-type': 'application/json',
+  };
+  const otherSectorHeaders = {
+    authorization: `Bearer ${signToken({
+      sub: fixture.activeParticipant.id,
+      role: 'AGENT',
+    })}`,
+    'content-type': 'application/json',
+  };
+  const createResponse = await fetch(
+    `${baseUrl}/tickets/${queueTicket.id}/notes`,
+    {
+      method: 'POST',
+      headers: ownerHeaders,
+      body: JSON.stringify({ content: 'Cliente pediu retorno por e-mail.' }),
+    },
+  );
+  assert.equal(createResponse.status, 201);
+  const note = await createResponse.json();
+  assert.equal(note.authorId, fixture.owner.id);
+  assert.equal(note.author.name, fixture.owner.name);
+  assert.equal(note.content, 'Cliente pediu retorno por e-mail.');
+  assert.ok(note.createdAt);
+  assert.equal(
+    await prisma.message.count({ where: { ticketId: queueTicket.id } }),
+    0,
+    'nota interna não pode ser registrada como mensagem do cliente',
+  );
+
+  const listResponse = await fetch(`${baseUrl}/tickets/${queueTicket.id}/notes`, {
+    headers: ownerHeaders,
+  });
+  assert.equal(listResponse.status, 200);
+  assert.equal((await listResponse.json()).length, 1);
+
+  const colleagueUpdateResponse = await fetch(
+    `${baseUrl}/tickets/${queueTicket.id}/notes/${note.id}`,
+    {
+      method: 'PATCH',
+      headers: colleagueHeaders,
+      body: JSON.stringify({ content: 'Alteração por outro atendente' }),
+    },
+  );
+  assert.equal(colleagueUpdateResponse.status, 403);
+
+  const inaccessibleListResponse = await fetch(
+    `${baseUrl}/tickets/${queueTicket.id}/notes`,
+    { headers: otherSectorHeaders },
+  );
+  assert.equal(inaccessibleListResponse.status, 403);
+  const inaccessibleCreateResponse = await fetch(
+    `${baseUrl}/tickets/${queueTicket.id}/notes`,
+    {
+      method: 'POST',
+      headers: otherSectorHeaders,
+      body: JSON.stringify({ content: 'Sem acesso' }),
+    },
+  );
+  assert.equal(inaccessibleCreateResponse.status, 403);
+
+  const ownUpdateResponse = await fetch(
+    `${baseUrl}/tickets/${queueTicket.id}/notes/${note.id}`,
+    {
+      method: 'PATCH',
+      headers: ownerHeaders,
+      body: JSON.stringify({ content: 'Cliente pediu retorno amanhã.' }),
+    },
+  );
+  assert.equal(ownUpdateResponse.status, 200);
+  assert.equal(
+    (await ownUpdateResponse.json()).content,
+    'Cliente pediu retorno amanhã.',
+  );
+
+  const transferredTicket = await prisma.ticket.create({
+    data: {
+      subject: 'Atendimento transferido com nota',
+      status: 'IN_PROGRESS',
+      sectorId: fixture.sector.id,
+      clientId: fixture.client.id,
+      agentId: fixture.owner.id,
+    },
+  });
+  const transferNoteResponse = await fetch(
+    `${baseUrl}/tickets/${transferredTicket.id}/notes`,
+    {
+      method: 'POST',
+      headers: ownerHeaders,
+      body: JSON.stringify({ content: 'Nota que deve acompanhar a transferência.' }),
+    },
+  );
+  assert.equal(transferNoteResponse.status, 201);
+  const transferNote = await transferNoteResponse.json();
+  const transferResponse = await fetch(
+    `${baseUrl}/tickets/${transferredTicket.id}/transfers`,
+    {
+      method: 'POST',
+      headers: ownerHeaders,
+      body: JSON.stringify({ toUserId: fixture.otherAgent.id }),
+    },
+  );
+  assert.equal(transferResponse.status, 200);
+  const newOwnerNotesResponse = await fetch(
+    `${baseUrl}/tickets/${transferredTicket.id}/notes`,
+    { headers: colleagueHeaders },
+  );
+  assert.equal(newOwnerNotesResponse.status, 200);
+  assert.deepEqual(
+    (await newOwnerNotesResponse.json()).map(({ id, content }) => ({
+      id,
+      content,
+    })),
+    [{ id: transferNote.id, content: 'Nota que deve acompanhar a transferência.' }],
+  );
+
+  const closedNoteResponse = await fetch(
+    `${baseUrl}/tickets/${closedTicket.id}/notes`,
+    {
+      method: 'POST',
+      headers: ownerHeaders,
+      body: JSON.stringify({ content: 'Nota antes do encerramento.' }),
+    },
+  );
+  assert.equal(closedNoteResponse.status, 201);
+  const closedNote = await closedNoteResponse.json();
+  await prisma.ticket.update({
+    where: { id: closedTicket.id },
+    data: { status: 'CLOSED', closedAt: new Date() },
+  });
+
+  const closedUpdateResponse = await fetch(
+    `${baseUrl}/tickets/${closedTicket.id}/notes/${closedNote.id}`,
+    {
+      method: 'PATCH',
+      headers: ownerHeaders,
+      body: JSON.stringify({ content: 'Não pode editar' }),
+    },
+  );
+  assert.equal(closedUpdateResponse.status, 409);
+  const closedDeleteResponse = await fetch(
+    `${baseUrl}/tickets/${closedTicket.id}/notes/${closedNote.id}`,
+    { method: 'DELETE', headers: ownerHeaders },
+  );
+  assert.equal(closedDeleteResponse.status, 409);
+});
+
+test('shared tags can be applied independently to tickets and persistent contacts', async () => {
+  const ownerHeaders = {
+    authorization: `Bearer ${signToken({
+      sub: fixture.owner.id,
+      role: 'AGENT',
+    })}`,
+    'content-type': 'application/json',
+  };
+  const otherSectorHeaders = {
+    authorization: `Bearer ${signToken({
+      sub: fixture.activeParticipant.id,
+      role: 'AGENT',
+    })}`,
+  };
+  const taggedClient = await prisma.user.create({
+    data: {
+      name: 'Cliente com etiqueta persistente',
+      role: 'CLIENT',
+      phone: `5521999${String(process.pid).padStart(6, '0').slice(-6)}`,
+    },
+  });
+  const tagsResponse = await fetch(`${baseUrl}/tags`, {
+    headers: ownerHeaders,
+  });
+  assert.equal(tagsResponse.status, 200);
+  const tags = await tagsResponse.json();
+  const defaultTagNames = new Set(tags.map((tag) => tag.name));
+  for (const name of ['Orçamento', 'Dúvida', 'Reclamação', 'Suporte', 'Financeiro']) {
+    assert.ok(defaultTagNames.has(name), `etiqueta padrão ${name} deve existir`);
+  }
+  const supportTag = tags.find((tag) => tag.name === 'Suporte');
+
+  const addTicketTagResponse = await fetch(
+    `${baseUrl}/tickets/${fixture.ticket.id}/tags`,
+    {
+      method: 'POST',
+      headers: ownerHeaders,
+      body: JSON.stringify({ tagId: supportTag.id }),
+    },
+  );
+  assert.equal(addTicketTagResponse.status, 200);
+  assert.deepEqual((await addTicketTagResponse.json()).map((tag) => tag.id), [
+    supportTag.id,
+  ]);
+  const ticketResponse = await fetch(
+    `${baseUrl}/tickets/${fixture.ticket.id}`,
+    { headers: ownerHeaders },
+  );
+  assert.deepEqual(
+    (await ticketResponse.json()).tags.map((tag) => tag.id),
+    [supportTag.id],
+  );
+
+  const inaccessibleTagResponse = await fetch(
+    `${baseUrl}/tickets/${fixture.ticket.id}/tags`,
+    {
+      method: 'POST',
+      headers: {
+        ...otherSectorHeaders,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ tagId: supportTag.id }),
+    },
+  );
+  assert.equal(inaccessibleTagResponse.status, 403);
+
+  const contactCreateResponse = await fetch(`${baseUrl}/contacts`, {
+    method: 'POST',
+    headers: ownerHeaders,
+    body: JSON.stringify({
+      name: taggedClient.name,
+      phone: taggedClient.phone,
+    }),
+  });
+  const contact = await contactCreateResponse.json();
+  assert.equal(contactCreateResponse.status, 201, JSON.stringify(contact));
+  assert.deepEqual(contact.tags, []);
+
+  const addContactTagResponse = await fetch(
+    `${baseUrl}/contacts/${contact.id}/tags/${supportTag.id}`,
+    { method: 'POST', headers: ownerHeaders },
+  );
+  assert.equal(addContactTagResponse.status, 200);
+  assert.deepEqual(
+    (await addContactTagResponse.json()).tags.map((tag) => tag.id),
+    [supportTag.id],
+  );
+
+  const linkedTicket = await prisma.ticket.create({
+    data: {
+      subject: 'Outra conversa do mesmo contato',
+      status: 'WAITING',
+      sectorId: fixture.sector.id,
+      clientId: taggedClient.id,
+    },
+  });
+  const linkedContactResponse = await fetch(
+    `${baseUrl}/contacts/from-ticket/${linkedTicket.id}`,
+    { headers: ownerHeaders },
+  );
+  assert.equal(linkedContactResponse.status, 200);
+  assert.deepEqual(
+    (await linkedContactResponse.json()).tags.map((tag) => tag.id),
+    [supportTag.id],
+    'etiqueta do contato deve persistir entre conversas',
+  );
+
+  const removeTicketTagResponse = await fetch(
+    `${baseUrl}/tickets/${fixture.ticket.id}/tags/${supportTag.id}`,
+    { method: 'DELETE', headers: ownerHeaders },
+  );
+  assert.equal(removeTicketTagResponse.status, 200);
+  assert.deepEqual(await removeTicketTagResponse.json(), []);
+
+  const contactAfterTicketRemoval = await fetch(
+    `${baseUrl}/contacts/${contact.id}`,
+    { headers: ownerHeaders },
+  );
+  assert.deepEqual(
+    (await contactAfterTicketRemoval.json()).tags.map((tag) => tag.id),
+    [supportTag.id],
+    'remover etiqueta da conversa não deve removê-la do contato',
+  );
+
+  const removeContactTagResponse = await fetch(
+    `${baseUrl}/contacts/${contact.id}/tags/${supportTag.id}`,
+    { method: 'DELETE', headers: ownerHeaders },
+  );
+  assert.equal(removeContactTagResponse.status, 200);
+  assert.deepEqual((await removeContactTagResponse.json()).tags, []);
 });
 
 test('malformed JSON is reported as a client error', async () => {

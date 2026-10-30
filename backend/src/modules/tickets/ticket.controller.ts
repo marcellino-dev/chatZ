@@ -6,8 +6,11 @@ import {
   updatePrioritySchema,
   listTicketsSchema,
   addParticipantSchema,
+  ticketNoteSchema,
+  ticketTagSchema,
 } from './ticket.schemas';
 import { getRouteParam } from '../../utils/routeParams';
+import * as ticketNotesService from './ticket.notes.service';
 
 export async function create(req: Request, res: Response, next: NextFunction) {
   try {
@@ -103,5 +106,87 @@ export async function listParticipants(req: Request, res: Response, next: NextFu
     return res.json(participants);
   } catch (err) {
     return next(err);
+  }
+}
+
+export async function listNotes(req: Request, res: Response, next: NextFunction) {
+  try {
+    return res.json(
+      await ticketNotesService.listTicketNotes(req.user!, getRouteParam(req, 'id'))
+    );
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function createNote(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = ticketNoteSchema.parse(req.body);
+    const note = await ticketNotesService.createTicketNote(
+      req.user!,
+      getRouteParam(req, 'id'),
+      data
+    );
+    return res.status(201).json(note);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function updateNote(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = ticketNoteSchema.parse(req.body);
+    const note = await ticketNotesService.updateTicketNote(
+      req.user!,
+      getRouteParam(req, 'id'),
+      getRouteParam(req, 'noteId'),
+      data
+    );
+    return res.json(note);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function deleteNote(req: Request, res: Response, next: NextFunction) {
+  try {
+    return res.json(
+      await ticketNotesService.deleteTicketNote(
+        req.user!,
+        getRouteParam(req, 'id'),
+        getRouteParam(req, 'noteId')
+      )
+    );
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function addTag(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { tagId } = ticketTagSchema.parse(req.body);
+    return res.json(
+      await ticketService.addTicketTag(
+        req.user!,
+        getRouteParam(req, 'id'),
+        tagId
+      )
+    );
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function removeTag(req: Request, res: Response, next: NextFunction) {
+  try {
+    return res.json(
+      await ticketService.removeTicketTag(
+        req.user!,
+        getRouteParam(req, 'id'),
+        getRouteParam(req, 'tagId')
+      )
+    );
+  } catch (error) {
+    return next(error);
   }
 }

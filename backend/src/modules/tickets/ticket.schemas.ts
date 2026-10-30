@@ -27,8 +27,21 @@ export const addParticipantSchema = z.object({
   userId: z.string().min(1, 'Usuário obrigatório'),
 });
 
+export const ticketNoteSchema = z.object({
+  content: z.string().trim().min(1, 'A nota não pode estar vazia').max(5000),
+});
+
+export const ticketNoteIdSchema = z.object({
+  noteId: z.string().min(1, 'Nota obrigatória'),
+});
+
+export const ticketTagSchema = z.object({
+  tagId: z.string().min(1, 'Etiqueta obrigatória'),
+});
+
 export type CreateTicketInput = z.infer<typeof createTicketSchema>;
 export type UpdateStatusInput = z.infer<typeof updateStatusSchema>;
 export type UpdatePriorityInput = z.infer<typeof updatePrioritySchema>;
 export type ListTicketsQuery = z.infer<typeof listTicketsSchema>;
 export type AddParticipantInput = z.infer<typeof addParticipantSchema>;
+export type TicketNoteInput = z.infer<typeof ticketNoteSchema>;

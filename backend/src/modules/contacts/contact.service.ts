@@ -48,6 +48,7 @@ const contactSelect = {
   company: true,
   createdAt: true,
   updatedAt: true,
+  tags: { select: { id: true, name: true } },
 } satisfies Prisma.ContactSelect;
 
 const contactFromTicketSelect = {
@@ -57,6 +58,7 @@ const contactFromTicketSelect = {
   company: true,
   createdAt: true,
   updatedAt: true,
+  tags: { select: { id: true, name: true } },
 } satisfies Prisma.ContactSelect;
 
 function normalizePhone(phone: string): string {
@@ -108,6 +110,30 @@ export async function getContactById(id: string) {
   });
   if (!contact) throw new AppError('Contato não encontrado', 404);
   return contact;
+}
+
+export async function addContactTag(contactId: string, tagId: string) {
+  const contact = await prisma.contact.findUnique({ where: { id: contactId } });
+  if (!contact) throw new AppError('Contato não encontrado', 404);
+  const tag = await prisma.tag.findUnique({ where: { id: tagId } });
+  if (!tag) throw new AppError('Etiqueta não encontrada', 404);
+
+  return prisma.contact.update({
+    where: { id: contactId },
+    data: { tags: { connect: { id: tagId } } },
+    select: contactSelect,
+  });
+}
+
+export async function removeContactTag(contactId: string, tagId: string) {
+  const contact = await prisma.contact.findUnique({ where: { id: contactId } });
+  if (!contact) throw new AppError('Contato não encontrado', 404);
+
+  return prisma.contact.update({
+    where: { id: contactId },
+    data: { tags: { disconnect: { id: tagId } } },
+    select: contactSelect,
+  });
 }
 
 export async function getTicketClientContact(user: AuthUser, ticketId: string) {

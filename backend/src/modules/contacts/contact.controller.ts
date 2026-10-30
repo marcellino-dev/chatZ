@@ -117,3 +117,27 @@ export async function startConversation(
     return next(error);
   }
 }
+
+export async function addTag(req: Request, res: Response, next: NextFunction) {
+  try {
+    const contact = await contactService.addContactTag(
+      getRouteParam(req, 'id'),
+      getRouteParam(req, 'tagId')
+    );
+    return res.json(contact);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function removeTag(req: Request, res: Response, next: NextFunction) {
+  try {
+    const contact = await contactService.removeContactTag(
+      getRouteParam(req, 'id'),
+      getRouteParam(req, 'tagId')
+    );
+    return res.json(contact);
+  } catch (error) {
+    return next(error);
+  }
+}

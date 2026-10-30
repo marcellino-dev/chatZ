@@ -8,7 +8,7 @@ import { getSocket } from '../../lib/socket';
 import { AttachmentPreview, type Attachment } from './AttachmentPreview';
 import { SimpleEmojiPicker } from './EmojiPicker';
 import { ProfileAvatar } from '../ProfileAvatar';
-import type { Ticket, Message, QuickReply } from '../../types';
+import type { Ticket, Message, QuickReply, TicketNote } from '../../types';
 
 interface Props {
   onToggleInfo: () => void;
@@ -39,6 +39,12 @@ interface Sticker {
   sourceMessageId?: string | null;
 }
 
+interface TicketNotesState {
+  ticketId: string | null;
+  notes: TicketNote[];
+  error: string;
+}
+
 export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -47,6 +53,13 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   const assignTicket = useTicketsStore((s) => s.assignTicket);
 
   const [ticket, setTicket] = useState<Ticket | null>(null);
+  const [ticketNotes, setTicketNotes] = useState<TicketNotesState>({
+    ticketId: null,
+    notes: [],
+    error: '',
+  });
+  const [noteDraft, setNoteDraft] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -148,6 +161,30 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     return () => clear();
   }, [id, fetchMessages, clear]);
 
+  useEffect(() => {
+    if (!id || !user || user.role === 'CLIENT') return;
+
+    let active = true;
+    api
+      .get<TicketNote[]>(`/tickets/${id}/notes`)
+      .then(({ data }) => {
+        if (active) setTicketNotes({ ticketId: id, notes: data, error: '' });
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setTicketNotes({
+            ticketId: id,
+            notes: [],
+            error: getErrorMessage(error),
+          });
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [id, user]);
+
   // ==========================
   // SOCKET.IO — TEMPO REAL
   // ==========================
@@ -212,9 +249,51 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       navigate('/chat', { replace: true });
     }
 
+    function handleNoteCreated(note: TicketNote) {
+      if (note.ticketId !== id) return;
+      setTicketNotes((current) => {
+        const currentNotes = current.ticketId === id ? current.notes : [];
+        return {
+          ticketId: id,
+          error: '',
+          notes: currentNotes.some((item) => item.id === note.id)
+            ? currentNotes
+            : [...currentNotes, note].sort(
+              (a, b) =>
+                new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+              ),
+        };
+      });
+    }
+
+    function handleNoteUpdated(note: TicketNote) {
+      if (note.ticketId !== id) return;
+      setTicketNotes((current) => ({
+        ticketId: id,
+        error: '',
+        notes: (current.ticketId === id ? current.notes : []).map((item) =>
+          item.id === note.id ? note : item
+        ),
+      }));
+    }
+
+    function handleNoteDeleted(data: { ticketId: string; noteId: string }) {
+      if (data.ticketId !== id) return;
+      setTicketNotes((current) => ({
+        ticketId: id,
+        error: '',
+        notes: (current.ticketId === id ? current.notes : []).filter(
+          (note) => note.id !== data.noteId
+        ),
+      }));
+    }
+
     activeSocket.on('message:new', handleNew);
     activeSocket.on('ticket:updated', handleUpdated);
     activeSocket.on('typing:update', handleTypingUpdate);
+    activeSocket.on('ticket:note-created', handleNoteCreated);
+    activeSocket.on('ticket:note-updated', handleNoteUpdated);
+    activeSocket.on('ticket:note-deleted', handleNoteDeleted);
     activeSocket.on('ticket:join-error', handleAccessRevoked);
     activeSocket.on('ticket:access-revoked', handleAccessRevoked);
 
@@ -225,6 +304,9 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       activeSocket.off('message:new', handleNew);
       activeSocket.off('ticket:updated', handleUpdated);
       activeSocket.off('typing:update', handleTypingUpdate);
+      activeSocket.off('ticket:note-created', handleNoteCreated);
+      activeSocket.off('ticket:note-updated', handleNoteUpdated);
+      activeSocket.off('ticket:note-deleted', handleNoteDeleted);
       activeSocket.off('ticket:join-error', handleAccessRevoked);
       activeSocket.off('ticket:access-revoked', handleAccessRevoked);
       if (isTypingRef.current) {
@@ -627,6 +709,75 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     }
   }
 
+  async function handleCreateNote(event: FormEvent) {
+    event.preventDefault();
+    if (!id || !noteDraft.trim() || noteSaving) return;
+
+    setNoteSaving(true);
+    try {
+      const { data } = await api.post<TicketNote>(`/tickets/${id}/notes`, {
+        content: noteDraft,
+      });
+      setTicketNotes((current) => {
+        const currentNotes = current.ticketId === id ? current.notes : [];
+        return {
+          ticketId: id,
+          error: '',
+          notes: currentNotes.some((note) => note.id === data.id)
+            ? currentNotes
+            : [...currentNotes, data].sort(
+              (a, b) =>
+                new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+              ),
+        };
+      });
+      setNoteDraft('');
+    } catch (error) {
+      setTicketNotes((current) => ({
+        ticketId: id,
+        notes: current.ticketId === id ? current.notes : [],
+        error: getErrorMessage(error),
+      }));
+    } finally {
+      setNoteSaving(false);
+    }
+  }
+
+  async function handleUpdateNote(noteId: string, content: string) {
+    if (!id) return;
+    const { data } = await api.patch<TicketNote>(
+      `/tickets/${id}/notes/${noteId}`,
+      { content }
+    );
+    setTicketNotes((current) => ({
+      ticketId: id,
+      error: '',
+      notes: (current.ticketId === id ? current.notes : []).map((note) =>
+        note.id === data.id ? data : note
+      ),
+    }));
+  }
+
+  async function handleDeleteNote(noteId: string) {
+    if (!id || !window.confirm('Excluir esta nota interna?')) return;
+    try {
+      await api.delete(`/tickets/${id}/notes/${noteId}`);
+      setTicketNotes((current) => ({
+        ticketId: id,
+        error: '',
+        notes: (current.ticketId === id ? current.notes : []).filter(
+          (note) => note.id !== noteId
+        ),
+      }));
+    } catch (error) {
+      setTicketNotes((current) => ({
+        ticketId: id,
+        notes: current.ticketId === id ? current.notes : [],
+        error: getErrorMessage(error),
+      }));
+    }
+  }
+
   if (!id) return <EmptyState />;
   if (loading) {
     return (
@@ -650,6 +801,39 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   const canAssign =
     !ticket.agentId && (user?.role === 'AGENT' || user?.role === 'ADMIN');
   const canSend = isMine || isParticipant;
+  const isTicketOpen =
+    ticket.status === 'WAITING' ||
+    ticket.status === 'IN_PROGRESS' ||
+    ticket.status === 'TRANSFERRED';
+  const canManageNotes =
+    (user?.role === 'ADMIN' || user?.role === 'AGENT') && isTicketOpen;
+  const notes =
+    ticketNotes.ticketId === id && user?.role !== 'CLIENT'
+      ? ticketNotes.notes
+      : [];
+  const notesError =
+    ticketNotes.ticketId === id && user?.role !== 'CLIENT'
+      ? ticketNotes.error
+      : '';
+  const notesLoading =
+    user?.role !== 'CLIENT' && Boolean(user) && ticketNotes.ticketId !== id;
+  const timeline = [
+    ...messages.map((message) => ({
+      type: 'message' as const,
+      id: message.id,
+      createdAt: message.createdAt,
+      message,
+    })),
+    ...notes.map((note) => ({
+      type: 'note' as const,
+      id: note.id,
+      createdAt: note.createdAt,
+      note,
+    })),
+  ].sort(
+    (a, b) =>
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
 
   const hasText = input.trim().length > 0;
   const hasUploading = pendingFiles.some((p) => p.uploading);
@@ -733,17 +917,37 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
-        {messages.length === 0 && (
+        {timeline.length === 0 && !notesLoading && (
           <div className="text-center py-12 text-chatz-text-muted text-sm">
             Nenhuma mensagem ainda. Comece a conversa.
           </div>
         )}
+        {notesLoading && (
+          <p className="mb-3 text-center text-xs text-chatz-text-muted">
+            Carregando notas internas...
+          </p>
+        )}
+        {notesError && (
+          <p role="alert" className="mb-3 rounded-chatz bg-chatz-danger-light p-2 text-xs text-chatz-danger">
+            {notesError}
+          </p>
+        )}
         <div className="space-y-2">
-          {messages.map((msg) => {
-            const isAgentMessage = msg.sender.role !== 'CLIENT';
-            return (
+          {timeline.map((entry) =>
+            entry.type === 'note' ? (
+              <InternalNote
+                key={`note-${entry.id}`}
+                note={entry.note}
+                canEdit={canManageNotes && entry.note.authorId === user?.id}
+                onSave={handleUpdateNote}
+                onDelete={handleDeleteNote}
+              />
+            ) : (() => {
+              const msg = entry.message;
+              const isAgentMessage = msg.sender.role !== 'CLIENT';
+              return (
               <MessageBubble
-                key={msg.id}
+                key={`message-${msg.id}`}
                 message={msg}
                 isAgent={isAgentMessage}
                 onFavoriteSticker={
@@ -768,8 +972,9 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
                     : undefined
                 }
               />
-            );
-          })}
+              );
+            })()
+          )}
         </div>
 
         {typingText && (
@@ -789,6 +994,38 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
 
         <div ref={messagesEndRef} />
       </div>
+
+      {canManageNotes && (
+        <form
+          onSubmit={handleCreateNote}
+          className="border-t border-amber-300 bg-amber-50 px-3 py-2"
+        >
+          <label
+            htmlFor="internal-note"
+            className="mb-1 block text-xs font-semibold text-amber-900"
+          >
+            Nota interna · só equipe
+          </label>
+          <div className="flex items-end gap-2">
+            <textarea
+              id="internal-note"
+              value={noteDraft}
+              maxLength={5000}
+              rows={2}
+              onChange={(event) => setNoteDraft(event.target.value)}
+              placeholder="Escreva uma observação que não será enviada ao cliente"
+              className="min-h-10 flex-1 resize-y rounded-chatz border border-amber-300 bg-white px-3 py-2 text-sm text-chatz-text outline-none focus:border-amber-500"
+            />
+            <button
+              type="submit"
+              disabled={noteSaving || !noteDraft.trim()}
+              className="rounded-chatz bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
+            >
+              {noteSaving ? 'Salvando...' : 'Adicionar'}
+            </button>
+          </div>
+        </form>
+      )}
 
       <footer className="border-t border-chatz-border bg-chatz-surface shrink-0">
         {canSend ? (
@@ -1111,6 +1348,117 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
         )}
       </footer>
     </div>
+  );
+}
+
+function InternalNote({
+  note,
+  canEdit,
+  onSave,
+  onDelete,
+}: {
+  note: TicketNote;
+  canEdit: boolean;
+  onSave: (noteId: string, content: string) => Promise<void>;
+  onDelete: (noteId: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [content, setContent] = useState(note.content);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const createdAt = new Date(note.createdAt).toLocaleString('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  });
+
+  async function handleSave(event: FormEvent) {
+    event.preventDefault();
+    if (!content.trim() || saving) return;
+
+    setSaving(true);
+    setError('');
+    try {
+      await onSave(note.id, content);
+      setEditing(false);
+    } catch (requestError) {
+      setError(getErrorMessage(requestError));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <article className="ml-auto max-w-[85%] rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950 shadow-sm">
+      <header className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+        <span className="rounded-full bg-amber-200 px-2 py-0.5 font-bold uppercase tracking-wide">
+          Só equipe
+        </span>
+        <span className="font-semibold">{note.author.name}</span>
+        <time dateTime={note.createdAt} className="text-amber-800">
+          {createdAt}
+        </time>
+      </header>
+
+      {editing ? (
+        <form onSubmit={handleSave}>
+          <textarea
+            autoFocus
+            value={content}
+            maxLength={5000}
+            rows={3}
+            onChange={(event) => setContent(event.target.value)}
+            className="w-full resize-y rounded border border-amber-400 bg-white p-2 text-sm text-chatz-text"
+          />
+          {error && <p role="alert" className="mt-1 text-xs text-chatz-danger">{error}</p>}
+          <div className="mt-2 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setContent(note.content);
+                setEditing(false);
+                setError('');
+              }}
+              disabled={saving}
+              className="text-xs text-amber-900 hover:underline"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={saving || !content.trim()}
+              className="rounded bg-amber-700 px-2.5 py-1 text-xs font-semibold text-white disabled:opacity-50"
+            >
+              {saving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <>
+          <p className="whitespace-pre-wrap break-words">{note.content}</p>
+          {canEdit && (
+            <div className="mt-2 flex justify-end gap-3 border-t border-amber-200 pt-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setContent(note.content);
+                  setEditing(true);
+                }}
+                className="text-xs font-medium text-amber-900 hover:underline"
+              >
+                Editar
+              </button>
+              <button
+                type="button"
+                onClick={() => void onDelete(note.id)}
+                className="text-xs font-medium text-chatz-danger hover:underline"
+              >
+                Excluir
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </article>
   );
 }
 

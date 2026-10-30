@@ -7,7 +7,7 @@ import { useAuthStore } from '../../stores/auth';
 import { ProfileAvatar } from '../ProfileAvatar';
 import { TransferModal } from './TransferModal';
 import { AddParticipantModal } from './AddParticipantModal';
-import type { Contact, Ticket } from '../../types';
+import type { Contact, Tag, Ticket } from '../../types';
 
 interface Props {
   onClose: () => void;
@@ -25,6 +25,10 @@ export function ChatInfo({ onClose }: Props) {
   const [addOpen, setAddOpen] = useState(false);
   const [contactModalOpen, setContactModalOpen] = useState(false);
   const [savedContact, setSavedContact] = useState<Contact | null>(null);
+  const [availableTags, setAvailableTags] = useState<Tag[]>([]);
+  const [tagsLoading, setTagsLoading] = useState(true);
+  const [tagError, setTagError] = useState('');
+  const [tagAction, setTagAction] = useState<string | null>(null);
 
   async function loadTicket() {
     if (!id) return;
@@ -52,6 +56,26 @@ export function ChatInfo({ onClose }: Props) {
     loadTicket();
   }, [id]);
 
+  useEffect(() => {
+    if (!user || user.role === 'CLIENT') return;
+    let active = true;
+    api
+      .get<Tag[]>('/tags')
+      .then(({ data }) => {
+        if (active) setAvailableTags(data);
+      })
+      .catch((error: unknown) => {
+        if (active) setTagError(getErrorMessage(error));
+      })
+      .finally(() => {
+        if (active) setTagsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
   // Recarrega quando muda o participante (via socket)
   useEffect(() => {
     if (!id) return;
@@ -63,12 +87,18 @@ export function ChatInfo({ onClose }: Props) {
       loadTicket();
     }
 
+    function handleTagsUpdated(tags: Tag[]) {
+      setTicket((current) => (current ? { ...current, tags } : current));
+    }
+
     socket.on('ticket:participant-added', handleParticipantChange);
     socket.on('ticket:participant-removed', handleParticipantChange);
+    socket.on('ticket:tags-updated', handleTagsUpdated);
 
     return () => {
       socket.off('ticket:participant-added', handleParticipantChange);
       socket.off('ticket:participant-removed', handleParticipantChange);
+      socket.off('ticket:tags-updated', handleTagsUpdated);
     };
   }, [id]);
 
@@ -106,6 +136,40 @@ export function ChatInfo({ onClose }: Props) {
         : current
     );
     setContactModalOpen(false);
+  }
+
+  async function toggleTicketTag(tag: Tag) {
+    if (!ticket || !id) return;
+    const exists = ticket.tags?.some((item) => item.id === tag.id) ?? false;
+    setTagAction(`ticket:${tag.id}`);
+    setTagError('');
+    try {
+      const { data } = exists
+        ? await api.delete<Tag[]>(`/tickets/${id}/tags/${tag.id}`)
+        : await api.post<Tag[]>(`/tickets/${id}/tags`, { tagId: tag.id });
+      setTicket((current) => (current ? { ...current, tags: data } : current));
+    } catch (error) {
+      setTagError(getErrorMessage(error));
+    } finally {
+      setTagAction(null);
+    }
+  }
+
+  async function toggleContactTag(tag: Tag) {
+    if (!savedContact) return;
+    const exists = savedContact.tags?.some((item) => item.id === tag.id) ?? false;
+    setTagAction(`contact:${tag.id}`);
+    setTagError('');
+    try {
+      const { data } = exists
+        ? await api.delete<Contact>(`/contacts/${savedContact.id}/tags/${tag.id}`)
+        : await api.post<Contact>(`/contacts/${savedContact.id}/tags/${tag.id}`);
+      setSavedContact(data);
+    } catch (error) {
+      setTagError(getErrorMessage(error));
+    } finally {
+      setTagAction(null);
+    }
   }
 
   if (!id || loading) return null;
@@ -166,6 +230,40 @@ export function ChatInfo({ onClose }: Props) {
           <Row label="Status" value={statusLabel(ticket.status)} />
           <Row label="Prioridade" value={priorityLabel(ticket.priority)} />
         </Section>
+
+        {user?.role !== 'CLIENT' && (
+          <>
+            <Section title="Etiquetas da conversa">
+              {tagError && (
+                <p role="alert" className="mb-2 text-xs text-chatz-danger">
+                  {tagError}
+                </p>
+              )}
+              <TagPicker
+                tags={availableTags}
+                selected={ticket.tags ?? []}
+                loading={tagsLoading}
+                disabled={tagAction !== null}
+                onToggle={toggleTicketTag}
+              />
+            </Section>
+            <Section title="Etiquetas do contato">
+              {savedContact ? (
+                <TagPicker
+                  tags={availableTags}
+                  selected={savedContact.tags ?? []}
+                  loading={tagsLoading}
+                  disabled={tagAction !== null}
+                  onToggle={toggleContactTag}
+                />
+              ) : (
+                <p className="text-xs text-chatz-text-muted">
+                  Salve o contato para aplicar etiquetas que persistem entre conversas.
+                </p>
+              )}
+            </Section>
+          </>
+        )}
 
         {ticket.participants && ticket.participants.length > 0 && (
           <Section title={`Participantes (${ticket.participants.length})`}>
@@ -282,6 +380,52 @@ export function ChatInfo({ onClose }: Props) {
         />
       )}
     </aside>
+  );
+}
+
+function TagPicker({
+  tags,
+  selected,
+  loading,
+  disabled,
+  onToggle,
+}: {
+  tags: Tag[];
+  selected: Tag[];
+  loading: boolean;
+  disabled: boolean;
+  onToggle: (tag: Tag) => void;
+}) {
+  if (loading) {
+    return <p className="text-xs text-chatz-text-muted">Carregando etiquetas...</p>;
+  }
+  if (tags.length === 0) {
+    return <p className="text-xs text-chatz-text-muted">Nenhuma etiqueta disponível.</p>;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {tags.map((tag) => {
+        const isSelected = selected.some((item) => item.id === tag.id);
+        return (
+          <button
+            key={tag.id}
+            type="button"
+            aria-pressed={isSelected}
+            disabled={disabled}
+            onClick={() => onToggle(tag)}
+            className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors disabled:opacity-50 ${
+              isSelected
+                ? 'border-chatz-primary bg-chatz-primary text-white'
+                : 'border-chatz-border bg-chatz-surface-alt text-chatz-text hover:border-chatz-primary'
+            }`}
+          >
+            {isSelected ? '✓ ' : '+ '}
+            {tag.name}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

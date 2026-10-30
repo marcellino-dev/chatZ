@@ -13,7 +13,7 @@ interface AuthState {
   logout: () => Promise<void>;
   updateStatus: (status: AgentStatus) => Promise<void>;
   setUser: (user: User) => void;
-  hydrateSocket: () => void;
+  hydrateSocket: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -73,10 +73,15 @@ export const useAuthStore = create<AuthState>()(
       setUser: (user) => set({ user }),
 
       // Reconecta socket ao abrir o app (se já logado)
-      hydrateSocket: () => {
+      hydrateSocket: async () => {
         const { token, isAuthenticated } = get();
         if (isAuthenticated && token) {
           connectSocket(token);
+          const { data } = await api.get<User>('/auth/me');
+          set({ user: data });
+          if (data.role === 'AGENT' && data.status === 'OFFLINE') {
+            await get().updateStatus('ONLINE');
+          }
         }
       },
     }),

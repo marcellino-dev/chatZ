@@ -184,6 +184,57 @@ export function emitToTicket(ticketId: string, event: string, data: any) {
   io.to(room).emit(event, data);
 }
 
+export async function emitToTicketStaff(
+  ticketId: string,
+  event: string,
+  data: unknown
+) {
+  if (!io) return;
+
+  const ticket = await prisma.ticket.findUnique({
+    where: { id: ticketId },
+    select: {
+      agentId: true,
+      requestedAgentId: true,
+      sectorId: true,
+      status: true,
+      participants: { select: { userId: true } },
+    },
+  });
+  if (!ticket) return;
+
+  const recipientIds = new Set(
+    ticket.participants.map(({ userId }) => userId)
+  );
+  if (ticket.agentId) recipientIds.add(ticket.agentId);
+
+  if (!ticket.agentId && ticket.status === 'WAITING') {
+    if (ticket.requestedAgentId) {
+      recipientIds.add(ticket.requestedAgentId);
+    } else {
+      const agents = await prisma.user.findMany({
+        where: {
+          role: 'AGENT',
+          active: true,
+          sectorId: ticket.sectorId,
+        },
+        select: { id: true },
+      });
+      agents.forEach(({ id }) => recipientIds.add(id));
+    }
+  }
+
+  const admins = await prisma.user.findMany({
+    where: { role: 'ADMIN', active: true },
+    select: { id: true },
+  });
+  admins.forEach(({ id }) => recipientIds.add(id));
+
+  recipientIds.forEach((userId) => {
+    io?.to(`user:${userId}`).emit(event, data);
+  });
+}
+
 export async function removeUnauthorizedTicketRoomMembers(ticketId: string) {
   if (!io) return;
 

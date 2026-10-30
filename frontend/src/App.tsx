@@ -18,7 +18,9 @@ export default function App() {
   const hydrateSocket = useAuthStore((s) => s.hydrateSocket);
 
   useEffect(() => {
-    hydrateSocket();
+    void hydrateSocket().catch((error: unknown) => {
+      console.error('Não foi possível sincronizar a sessão do atendente:', error);
+    });
     setBaseTitle('chatZ — Real-time support');
     setupVisibilityListener();
 

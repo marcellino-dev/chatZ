@@ -75,16 +75,16 @@ model Sector {
 // USUÁRIOS
 // ==========================
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  role      Role     @default(CLIENT)
-  active    Boolean  @default(true)
+  id     String  @id @default(cuid())
+  name   String
+  role   Role    @default(CLIENT)
+  active Boolean @default(true)
 
-  email     String?  @unique
-  password  String?
-  phone     String?  @unique
-  company   String?
-  profilePictureUrl     String?
+  email                   String?     @unique
+  password                String?
+  phone                   String?     @unique
+  company                 String?
+  profilePictureUrl       String?
   profilePictureUpdatedAt DateTime?
   status                  AgentStatus @default(ONLINE)
   statusChangedAt         DateTime?
@@ -92,15 +92,15 @@ model User {
   desktopNotifications    Boolean     @default(true)
   notificationSound       String      @default("ding")
 
-  sectorId  String?
-  sector    Sector?  @relation("SectorUsers", fields: [sectorId], references: [id])
+  sectorId String?
+  sector   Sector? @relation("SectorUsers", fields: [sectorId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  clientTickets     Ticket[] @relation("ClientTickets")
-  agentTickets      Ticket[] @relation("AgentTickets")
-  requestedTickets  Ticket[] @relation("RequestedAgentTickets")
+  clientTickets    Ticket[] @relation("ClientTickets")
+  agentTickets     Ticket[] @relation("AgentTickets")
+  requestedTickets Ticket[] @relation("RequestedAgentTickets")
 
   messages      Message[]
   transfersSent Transfer[] @relation("TransfersFrom")
@@ -109,6 +109,7 @@ model User {
   participatedTickets TicketParticipant[] @relation("TicketParticipants")
   addedParticipants   TicketParticipant[] @relation("ParticipantAddedBy")
   stickers            Sticker[]
+  ticketNotes         TicketNote[]
 
   @@map("users")
 }
@@ -124,6 +125,7 @@ model Contact {
   company         String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  tags            Tag[]
 
   @@map("contacts")
 }
@@ -146,19 +148,19 @@ model QuickReply {
 // FIGURINHAS DOS ATENDENTES
 // ==========================
 model Sticker {
-  id        String   @id @default(cuid())
-  name      String
-  url       String
-  filename  String
-  mimetype  String
-  size      Int
-  userId    String
+  id              String   @id @default(cuid())
+  name            String
+  url             String
+  filename        String
+  mimetype        String
+  size            Int
+  userId          String
   sourceMessageId String?
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
 
-  @@index([userId, createdAt])
   @@unique([userId, sourceMessageId])
+  @@index([userId, createdAt])
   @@map("stickers")
 }
 
@@ -166,50 +168,76 @@ model Sticker {
 // TICKETS
 // ==========================
 model Ticket {
-  id        String         @id @default(cuid())
-  subject   String
-  status    TicketStatus   @default(WAITING)
-  priority  TicketPriority @default(MEDIUM)
-  channel   TicketChannel  @default(WHATSAPP)
+  id       String         @id @default(cuid())
+  subject  String
+  status   TicketStatus   @default(WAITING)
+  priority TicketPriority @default(MEDIUM)
+  channel  TicketChannel  @default(WHATSAPP)
 
-  sectorId  String
-  sector    Sector         @relation("SectorTickets", fields: [sectorId], references: [id])
+  sectorId String
+  sector   Sector @relation("SectorTickets", fields: [sectorId], references: [id])
 
-  clientId  String
-  client    User           @relation("ClientTickets", fields: [clientId], references: [id])
+  clientId String
+  client   User   @relation("ClientTickets", fields: [clientId], references: [id])
 
   requestedAgentId String?
   requestedAgent   User?   @relation("RequestedAgentTickets", fields: [requestedAgentId], references: [id])
 
-  agentId   String?
-  agent     User?          @relation("AgentTickets", fields: [agentId], references: [id])
+  agentId String?
+  agent   User?   @relation("AgentTickets", fields: [agentId], references: [id])
 
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   closedAt  DateTime?
 
-  messages      Message[]
-  transfers     Transfer[]
-  conversation  Conversation?
-  participants  TicketParticipant[]
+  messages     Message[]
+  transfers    Transfer[]
+  conversation Conversation?
+  participants TicketParticipant[]
+  notes        TicketNote[]
+  tags         Tag[]
 
   @@map("tickets")
+}
+
+model TicketNote {
+  id        String   @id @default(cuid())
+  content   String
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ticketId, createdAt])
+  @@map("ticket_notes")
+}
+
+model Tag {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  contacts  Contact[]
+  tickets   Ticket[]
+
+  @@map("tags")
 }
 
 // ==========================
 // PARTICIPANTES DO TICKET
 // ==========================
 model TicketParticipant {
-  id        String   @id @default(cuid())
+  id String @id @default(cuid())
 
-  ticketId  String
-  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketId String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
-  userId    String
-  user      User     @relation("TicketParticipants", fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation("TicketParticipants", fields: [userId], references: [id], onDelete: Cascade)
 
   addedById String?
-  addedBy   User?    @relation("ParticipantAddedBy", fields: [addedById], references: [id])
+  addedBy   User?   @relation("ParticipantAddedBy", fields: [addedById], references: [id])
 
   createdAt DateTime @default(now())
 
@@ -221,18 +249,18 @@ model TicketParticipant {
 // MENSAGENS
 // ==========================
 model Message {
-  id         String   @id @default(cuid())
-  content    String   @default("")
-  read       Boolean  @default(false)
+  id         String  @id @default(cuid())
+  content    String  @default("")
+  read       Boolean @default(false)
   attachment Json?
 
-  ticketId   String
-  ticket     Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketId String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
-  senderId   String
-  sender     User     @relation(fields: [senderId], references: [id])
+  senderId String
+  sender   User   @relation(fields: [senderId], references: [id])
 
-  createdAt  DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@map("messages")
 }
@@ -241,20 +269,20 @@ model Message {
 // CONVERSAS
 // ==========================
 model Conversation {
-  id        String    @id @default(cuid())
-  phone     String    @unique
-  state     BotState  @default(WAITING_SECTOR)
+  id    String   @id @default(cuid())
+  phone String   @unique
+  state BotState @default(WAITING_SECTOR)
 
-  sectorId  String?
-  sector    Sector?   @relation(fields: [sectorId], references: [id])
+  sectorId String?
+  sector   Sector? @relation(fields: [sectorId], references: [id])
 
-  ticketId  String?   @unique
-  ticket    Ticket?   @relation(fields: [ticketId], references: [id])
+  ticketId String? @unique
+  ticket   Ticket? @relation(fields: [ticketId], references: [id])
 
-  context   String?
+  context String?
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("conversations")
 }
@@ -263,20 +291,20 @@ model Conversation {
 // TRANSFERÊNCIAS
 // ==========================
 model Transfer {
-  id         String   @id @default(cuid())
-  reason     String?
+  id     String  @id @default(cuid())
+  reason String?
 
-  ticketId   String
-  ticket     Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  ticketId String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   fromUserId String
-  fromUser   User     @relation("TransfersFrom", fields: [fromUserId], references: [id])
+  fromUser   User   @relation("TransfersFrom", fields: [fromUserId], references: [id])
 
-  toUserId   String?
-  toUser     User?    @relation("TransfersTo", fields: [toUserId], references: [id])
+  toUserId String?
+  toUser   User?   @relation("TransfersTo", fields: [toUserId], references: [id])
 
   toSectorId String?
-  toSector   Sector?  @relation("TransfersToSector", fields: [toSectorId], references: [id])
+  toSector   Sector? @relation("TransfersToSector", fields: [toSectorId], references: [id])
 
   createdAt DateTime @default(now())
 

@@ -15,6 +15,7 @@ import {
   emitToSector,
   emitToUser,
   emitToTicket,
+  emitToTicketStaff,
   removeUnauthorizedTicketRoomMembers,
 } from '../../sockets/socket.server';
 
@@ -133,6 +134,9 @@ export async function listTickets(user: AuthUser, query: ListTicketsQuery) {
         },
       },
       _count: { select: { messages: true } },
+      ...(user.role !== 'CLIENT' && {
+        tags: { select: { id: true, name: true } },
+      }),
     },
   });
 
@@ -174,6 +178,9 @@ export async function getTicketById(user: AuthUser, id: string) {
         },
         orderBy: { createdAt: 'asc' },
       },
+      ...(user.role !== 'CLIENT' && {
+        tags: { select: { id: true, name: true } },
+      }),
     },
   });
 
@@ -490,4 +497,43 @@ export async function listParticipants(user: AuthUser, ticketId: string) {
   });
 
   return participants;
+}
+
+export async function addTicketTag(
+  user: AuthUser,
+  ticketId: string,
+  tagId: string
+) {
+  const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+  if (!ticket) throw new AppError('Ticket não encontrado', 404);
+  await assertTicketAccess(user, ticket);
+
+  const tag = await prisma.tag.findUnique({ where: { id: tagId } });
+  if (!tag) throw new AppError('Etiqueta não encontrada', 404);
+
+  const updated = await prisma.ticket.update({
+    where: { id: ticketId },
+    data: { tags: { connect: { id: tagId } } },
+    select: { id: true, tags: { select: { id: true, name: true } } },
+  });
+  await emitToTicketStaff(ticketId, 'ticket:tags-updated', updated.tags);
+  return updated.tags;
+}
+
+export async function removeTicketTag(
+  user: AuthUser,
+  ticketId: string,
+  tagId: string
+) {
+  const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+  if (!ticket) throw new AppError('Ticket não encontrado', 404);
+  await assertTicketAccess(user, ticket);
+
+  const updated = await prisma.ticket.update({
+    where: { id: ticketId },
+    data: { tags: { disconnect: { id: tagId } } },
+    select: { id: true, tags: { select: { id: true, name: true } } },
+  });
+  await emitToTicketStaff(ticketId, 'ticket:tags-updated', updated.tags);
+  return updated.tags;
 }

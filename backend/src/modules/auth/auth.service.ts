@@ -29,6 +29,28 @@ export async function login(data: LoginInput) {
     throw new AppError('Credenciais inválidas', 401);
   }
 
+  let status = user.status;
+  let statusChangedAt = user.statusChangedAt;
+  if (user.role === 'AGENT' && status === 'OFFLINE') {
+    const now = new Date();
+    const activated = await prisma.user.updateMany({
+      where: { id: user.id, status: 'OFFLINE' },
+      data: { status: 'ONLINE', statusChangedAt: now },
+    });
+
+    if (activated.count > 0) {
+      status = 'ONLINE';
+      statusChangedAt = now;
+    } else {
+      const currentStatus = await prisma.user.findUniqueOrThrow({
+        where: { id: user.id },
+        select: { status: true, statusChangedAt: true },
+      });
+      status = currentStatus.status;
+      statusChangedAt = currentStatus.statusChangedAt;
+    }
+  }
+
   const token = signToken({ sub: user.id, role: user.role });
 
   return {
@@ -40,8 +62,8 @@ export async function login(data: LoginInput) {
       role: user.role,
       sectorId: user.sectorId,
       profilePictureUrl: user.profilePictureUrl,
-      status: user.status,
-      statusChangedAt: user.statusChangedAt,
+      status,
+      statusChangedAt,
       soundEnabled: user.soundEnabled,
       desktopNotifications: user.desktopNotifications,
       notificationSound: user.notificationSound,

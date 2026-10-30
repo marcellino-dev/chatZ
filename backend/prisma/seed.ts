@@ -6,6 +6,21 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Iniciando seed do chatZ...\n');
 
+  const defaultTags = [
+    'Orçamento',
+    'Dúvida',
+    'Reclamação',
+    'Suporte',
+    'Financeiro',
+  ];
+  for (const name of defaultTags) {
+    await prisma.tag.upsert({
+      where: { name },
+      update: {},
+      create: { name },
+    });
+  }
+
   // ==========================
   // LIMPAR (ordem importa por causa das FKs)
   // ==========================

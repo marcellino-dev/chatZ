@@ -13,5 +13,7 @@ router.post('/', contactController.create);
 router.patch('/:id', contactController.update);
 router.delete('/:id', contactController.remove);
 router.post('/:id/start-conversation', contactController.startConversation);
+router.post('/:id/tags/:tagId', contactController.addTag);
+router.delete('/:id/tags/:tagId', contactController.removeTag);
 
 export default router;
