@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import type { AgentStatus } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { AppError } from '../../middlewares/errorHandler';
 import { signToken } from '../../utils/jwt';
@@ -39,6 +40,11 @@ export async function login(data: LoginInput) {
       role: user.role,
       sectorId: user.sectorId,
       profilePictureUrl: user.profilePictureUrl,
+      status: user.status,
+      statusChangedAt: user.statusChangedAt,
+      soundEnabled: user.soundEnabled,
+      desktopNotifications: user.desktopNotifications,
+      notificationSound: user.notificationSound,
       sector: user.sector,
     },
   };
@@ -59,6 +65,11 @@ export async function me(userId: string) {
       active: true,
       sectorId: true,
       profilePictureUrl: true,
+      status: true,
+      statusChangedAt: true,
+      soundEnabled: true,
+      desktopNotifications: true,
+      notificationSound: true,
       sector: {
         select: { id: true, name: true, slug: true },
       },
@@ -71,6 +82,30 @@ export async function me(userId: string) {
   }
 
   return user;
+}
+
+export async function updateStatus(userId: string, status: AgentStatus) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, status: true },
+  });
+
+  if (!user) {
+    throw new AppError('Usuário não encontrado', 404);
+  }
+
+  if (user.status === status) {
+    return prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { status: true, statusChangedAt: true },
+    });
+  }
+
+  return prisma.user.update({
+    where: { id: userId },
+    data: { status, statusChangedAt: new Date() },
+    select: { status: true, statusChangedAt: true },
+  });
 }
 
 export async function updateProfilePicture(userId: string, url: string) {
@@ -86,6 +121,11 @@ export async function updateProfilePicture(userId: string, url: string) {
       active: true,
       sectorId: true,
       profilePictureUrl: true,
+      status: true,
+      statusChangedAt: true,
+      soundEnabled: true,
+      desktopNotifications: true,
+      notificationSound: true,
       sector: { select: { id: true, name: true, slug: true } },
       createdAt: true,
     },
@@ -107,6 +147,11 @@ export async function removeProfilePicture(userId: string) {
       active: true,
       sectorId: true,
       profilePictureUrl: true,
+      status: true,
+      statusChangedAt: true,
+      soundEnabled: true,
+      desktopNotifications: true,
+      notificationSound: true,
       sector: { select: { id: true, name: true, slug: true } },
       createdAt: true,
     },
@@ -146,6 +191,7 @@ export async function createUser(data: CreateUserInput) {
       password: hashedPassword,
       role: data.role,
       sectorId: data.role === 'AGENT' ? data.sectorId : null,
+      statusChangedAt: new Date(),
     },
     select: {
       id: true,

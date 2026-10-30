@@ -1,6 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import * as authService from './auth.service';
-import { loginSchema, createUserSchema } from './auth.schemas';
+import {
+  loginSchema,
+  createUserSchema,
+  updateStatusSchema,
+} from './auth.schemas';
 import { getRouteParam } from '../../utils/routeParams';
 import { saveUploadedFile } from '../uploads/upload.service';
 
@@ -34,6 +38,20 @@ export async function me(
     return res.json(user);
   } catch (err) {
     return next(err);
+  }
+}
+
+export async function updateStatus(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const data = updateStatusSchema.parse(req.body);
+    const user = await authService.updateStatus(req.user!.id, data.status);
+    return res.json(user);
+  } catch (error) {
+    return next(error);
   }
 }
 

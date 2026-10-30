@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { api } from '../lib/api';
 import { connectSocket, disconnectSocket } from '../lib/socket';
-import type { User, AuthResponse, LoginPayload } from '../types';
+import type { User, AgentStatus, AuthResponse, LoginPayload } from '../types';
 
 interface AuthState {
   user: User | null;
@@ -10,7 +10,8 @@ interface AuthState {
   isAuthenticated: boolean;
 
   login: (payload: LoginPayload) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
+  updateStatus: (status: AgentStatus) => Promise<void>;
   setUser: (user: User) => void;
   hydrateSocket: () => void;
 }
@@ -39,17 +40,34 @@ export const useAuthStore = create<AuthState>()(
         connectSocket(data.token);
       },
 
-      logout: () => {
-        disconnectSocket();
-        sessionStorage.removeItem('chatz_token');
-        sessionStorage.removeItem('chatz_user');
-        localStorage.removeItem('chatz_token');
-        localStorage.removeItem('chatz_user');
-        set({
-          user: null,
-          token: null,
-          isAuthenticated: false,
-        });
+      logout: async () => {
+        const { user } = get();
+        try {
+          if (user?.role === 'AGENT' && user.status !== 'OFFLINE') {
+            await api.put('/auth/me/status', { status: 'OFFLINE' });
+          }
+        } finally {
+          disconnectSocket();
+          sessionStorage.removeItem('chatz_token');
+          sessionStorage.removeItem('chatz_user');
+          localStorage.removeItem('chatz_token');
+          localStorage.removeItem('chatz_user');
+          set({
+            user: null,
+            token: null,
+            isAuthenticated: false,
+          });
+        }
+      },
+
+      updateStatus: async (status) => {
+        const { data } = await api.put<Pick<User, 'status' | 'statusChangedAt'>>(
+          '/auth/me/status',
+          { status },
+        );
+        set((state) => ({
+          user: state.user ? { ...state.user, ...data } : null,
+        }));
       },
 
       setUser: (user) => set({ user }),

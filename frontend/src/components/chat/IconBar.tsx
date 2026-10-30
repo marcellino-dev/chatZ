@@ -1,6 +1,8 @@
 import { NavLink, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { useAuthStore } from '../../stores/auth';
 import { ProfileAvatar } from '../ProfileAvatar';
+import type { AgentStatus } from '../../types';
 
 interface NavItem {
   to: string;
@@ -10,7 +12,9 @@ interface NavItem {
 
 export function IconBar() {
   const navigate = useNavigate();
-  const { user, logout } = useAuthStore();
+  const { user, logout, updateStatus } = useAuthStore();
+  const [statusSaving, setStatusSaving] = useState(false);
+  const [statusError, setStatusError] = useState('');
 
   if (!user) return null;
 
@@ -34,10 +38,43 @@ export function IconBar() {
 
   items.push({ to: '/settings', label: 'Configurações', icon: <SettingsIcon /> });
 
-  function handleLogout() {
-    logout();
-    navigate('/login', { replace: true });
+  async function handleStatusChange(status: AgentStatus) {
+    setStatusSaving(true);
+    setStatusError('');
+    try {
+      await updateStatus(status);
+    } catch {
+      setStatusError('Não foi possível atualizar seu status.');
+    } finally {
+      setStatusSaving(false);
+    }
   }
+
+  async function handleLogout() {
+    try {
+      await logout();
+    } catch {
+      window.alert(
+        'Sua sessão foi encerrada, mas não foi possível atualizar o status para offline.',
+      );
+    } finally {
+      navigate('/login', { replace: true });
+    }
+  }
+
+  const status = user.status ?? 'ONLINE';
+  const statusLabel = {
+    ONLINE: 'Online',
+    AWAY: 'Ausente',
+    BUSY: 'Ocupado',
+    OFFLINE: 'Offline',
+  }[status];
+  const statusColor = {
+    ONLINE: 'bg-emerald-400',
+    AWAY: 'bg-amber-400',
+    BUSY: 'bg-rose-400',
+    OFFLINE: 'bg-slate-400',
+  }[status];
 
   return (
     <aside
@@ -78,30 +115,48 @@ export function IconBar() {
         ))}
       </nav>
 
-      <div className="mt-5 flex items-center justify-center gap-0 border-t border-white/10 pt-4 lg:justify-start lg:gap-2">
-        <button
-          type="button"
-          onClick={() => navigate('/settings')}
-          className="flex min-w-0 items-center justify-center gap-2.5 rounded-xl p-0 text-left
-                     lg:flex-1 lg:justify-start lg:p-2
-                     transition-colors hover:bg-white/10"
-          title="Abrir perfil e configurações"
-        >
-          <span className="relative shrink-0">
-            <ProfileAvatar
-              name={user.name}
-              pictureUrl={user.profilePictureUrl}
-              sizeClass="h-8 w-8 lg:h-10 lg:w-10"
-              textClass="text-xs"
-            />
-            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-[#07111b] bg-emerald-400" />
-          </span>
-          <span className="hidden min-w-0 flex-1 lg:block">
-            <span className="block truncate text-xs font-semibold text-white">{user.name}</span>
-            <span className="block text-[10px] text-slate-400">Online</span>
-          </span>
-          <span className="hidden text-lg leading-none text-slate-400 lg:block" aria-hidden="true">›</span>
-        </button>
+      <div className="mt-5 flex flex-col items-center justify-center gap-2 border-t border-white/10 pt-4 lg:flex-row lg:justify-start lg:gap-2">
+        <div className="min-w-0 flex-1">
+          <button
+            type="button"
+            onClick={() => navigate('/settings')}
+            className="flex w-full min-w-0 items-center justify-center gap-2.5 rounded-xl p-0 text-left
+                       lg:justify-start lg:p-2
+                       transition-colors hover:bg-white/10"
+            title="Abrir perfil e configurações"
+          >
+            <span className="relative shrink-0">
+              <ProfileAvatar
+                name={user.name}
+                pictureUrl={user.profilePictureUrl}
+                sizeClass="h-8 w-8 lg:h-10 lg:w-10"
+                textClass="text-xs"
+              />
+              <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-[#07111b] ${statusColor}`} />
+            </span>
+            <span className="hidden min-w-0 flex-1 lg:block">
+              <span className="block truncate text-xs font-semibold text-white">{user.name}</span>
+            </span>
+            <span className="hidden text-lg leading-none text-slate-400 lg:block" aria-hidden="true">›</span>
+          </button>
+          {user.role === 'AGENT' ? (
+            <select
+              aria-label="Status de atendimento"
+              value={status}
+              disabled={statusSaving}
+              onChange={(event) =>
+                void handleStatusChange(event.target.value as AgentStatus)
+              }
+              className="mt-1 block w-full max-w-full cursor-pointer border-0 bg-transparent p-0 text-center text-[10px] text-slate-400 outline-none focus:text-white disabled:opacity-60 lg:ml-[54px] lg:w-auto lg:text-left"
+            >
+              <option value="ONLINE" className="bg-[#07111b]">Online</option>
+              <option value="AWAY" className="bg-[#07111b]">Ausente</option>
+              <option value="BUSY" className="bg-[#07111b]">Ocupado</option>
+            </select>
+          ) : (
+            <span className="hidden text-[10px] text-slate-400 lg:ml-[54px] lg:block">{statusLabel}</span>
+          )}
+        </div>
         <button
           type="button"
           onClick={handleLogout}
@@ -114,6 +169,11 @@ export function IconBar() {
           <LogoutIcon />
         </button>
       </div>
+      {statusError && (
+        <p role="alert" className="mt-2 px-2 text-[10px] text-rose-300">
+          {statusError}
+        </p>
+      )}
     </aside>
   );
 }

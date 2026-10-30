@@ -38,10 +38,12 @@ export default function App() {
           <Route path="/chat" element={<Chat />} />
           <Route path="/chat/:id" element={<Chat />} />
           <Route path="/settings" element={<Settings />} />
-          <Route path="/sectors" element={<Sectors />} />
-          <Route path="/users" element={<Users />} />
           <Route path="/contacts" element={<Contacts />} />
           <Route path="/quick-replies" element={<QuickReplies />} />
+          <Route element={<ProtectedRoute roles={['ADMIN']} />}>
+            <Route path="/sectors" element={<Sectors />} />
+            <Route path="/users" element={<Users />} />
+          </Route>
         </Route>
         <Route path="/" element={<Navigate to={isAuthenticated ? '/chat' : '/login'} replace />} />
         <Route path="*" element={<Navigate to={isAuthenticated ? '/chat' : '/login'} replace />} />

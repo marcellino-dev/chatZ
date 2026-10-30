@@ -8,6 +8,10 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Senha obrigatória'),
 });
 
+export const updateStatusSchema = z.object({
+  status: z.enum(['ONLINE', 'AWAY', 'BUSY', 'OFFLINE']),
+});
+
 // ==========================
 // CRIAR USUÁRIO (só ADMIN)
 // ==========================
@@ -31,4 +35,5 @@ export const createUserSchema = z
 // TIPOS
 // ==========================
 export type LoginInput = z.infer<typeof loginSchema>;
+export type UpdateStatusInput = z.infer<typeof updateStatusSchema>;
 export type CreateUserInput = z.infer<typeof createUserSchema>;

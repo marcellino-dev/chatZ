@@ -6,9 +6,16 @@ export function Layout() {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
 
-  function handleLogout() {
-    logout();
-    navigate('/login', { replace: true });
+  async function handleLogout() {
+    try {
+      await logout();
+    } catch {
+      window.alert(
+        'Sua sessão foi encerrada, mas não foi possível atualizar o status para offline.',
+      );
+    } finally {
+      navigate('/login', { replace: true });
+    }
   }
 
   if (!user) return null;

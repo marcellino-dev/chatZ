@@ -2,6 +2,7 @@
 // AUTH
 // ==========================
 export type Role = 'ADMIN' | 'AGENT' | 'CLIENT';
+export type AgentStatus = 'ONLINE' | 'AWAY' | 'BUSY' | 'OFFLINE';
 
 export interface Sector {
   id: string;
@@ -24,6 +25,11 @@ export interface User {
   sectorId: string | null;
   company?: string | null;
   profilePictureUrl?: string | null;
+  status?: AgentStatus;
+  statusChangedAt?: string | null;
+  soundEnabled?: boolean;
+  desktopNotifications?: boolean;
+  notificationSound?: string;
   sector?: Pick<Sector, 'id' | 'name' | 'slug'> | null;
   createdAt: string;
 }

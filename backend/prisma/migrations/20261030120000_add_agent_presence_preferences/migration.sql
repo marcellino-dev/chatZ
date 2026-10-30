@@ -1,0 +1,6 @@
+ALTER TABLE "users" ADD COLUMN "status" TEXT NOT NULL DEFAULT 'ONLINE';
+ALTER TABLE "users" ADD COLUMN "statusChangedAt" DATETIME;
+UPDATE "users" SET "statusChangedAt" = CURRENT_TIMESTAMP;
+ALTER TABLE "users" ADD COLUMN "soundEnabled" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "users" ADD COLUMN "desktopNotifications" BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE "users" ADD COLUMN "notificationSound" TEXT NOT NULL DEFAULT 'ding';

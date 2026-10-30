@@ -93,6 +93,7 @@ const routes = [
   ['GET', '/'],
   ['POST', '/auth/login', 400],
   ['GET', '/auth/me', 401],
+  ['PUT', '/auth/me/status', 401],
   ['POST', '/auth/me/profile-picture', 401],
   ['DELETE', '/auth/me/profile-picture', 401],
   ['POST', '/auth/users', 401],
@@ -152,6 +153,67 @@ test('all registered API routes respond with their expected access or validation
       assert.notEqual(response.status, 404);
     });
   }
+});
+
+test('agents can update only their own status and admins cannot use the agent status route', async () => {
+  const agentToken = signToken({ sub: fixture.owner.id, role: 'AGENT' });
+  const admin = await prisma.user.create({
+    data: {
+      name: 'Administrador de status',
+      role: 'ADMIN',
+      email: `status-admin-${process.pid}@test.invalid`,
+    },
+  });
+  const adminToken = signToken({ sub: admin.id, role: 'ADMIN' });
+
+  const profileResponse = await fetch(`${baseUrl}/auth/me?userId=${fixture.otherAgent.id}`, {
+    headers: { authorization: `Bearer ${agentToken}` },
+  });
+  assert.equal(profileResponse.status, 200);
+  const profile = await profileResponse.json();
+  assert.equal(profile.id, fixture.owner.id);
+  assert.equal(profile.status, 'ONLINE');
+  assert.equal(profile.soundEnabled, true);
+  assert.equal(profile.desktopNotifications, true);
+
+  const statusResponse = await fetch(`${baseUrl}/auth/me/status`, {
+    method: 'PUT',
+    headers: {
+      authorization: `Bearer ${agentToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ status: 'AWAY', userId: fixture.otherAgent.id }),
+  });
+  assert.equal(statusResponse.status, 200);
+  assert.equal((await statusResponse.json()).status, 'AWAY');
+  assert.equal(
+    (await prisma.user.findUnique({ where: { id: fixture.owner.id } })).status,
+    'AWAY',
+  );
+  assert.equal(
+    (await prisma.user.findUnique({ where: { id: fixture.otherAgent.id } })).status,
+    'ONLINE',
+  );
+
+  const invalidStatusResponse = await fetch(`${baseUrl}/auth/me/status`, {
+    method: 'PUT',
+    headers: {
+      authorization: `Bearer ${agentToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ status: 'INVISIBLE' }),
+  });
+  assert.equal(invalidStatusResponse.status, 400);
+
+  const forbiddenResponse = await fetch(`${baseUrl}/auth/me/status`, {
+    method: 'PUT',
+    headers: {
+      authorization: `Bearer ${adminToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ status: 'BUSY' }),
+  });
+  assert.equal(forbiddenResponse.status, 403);
 });
 
 test('health and public webhook endpoints return their documented payloads', async () => {

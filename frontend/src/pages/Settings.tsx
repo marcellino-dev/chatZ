@@ -429,9 +429,16 @@ function AdvancedSection() {
             <p className="text-xs text-chatz-text-muted">Desconectar do chatZ</p>
           </div>
           <button
-            onClick={() => {
-              useAuthStore.getState().logout();
-              navigate('/login');
+            onClick={async () => {
+              try {
+                await useAuthStore.getState().logout();
+              } catch {
+                window.alert(
+                  'Sua sessão foi encerrada, mas não foi possível atualizar o status para offline.',
+                );
+              } finally {
+                navigate('/login');
+              }
             }}
             className="px-4 py-2 rounded-chatz bg-chatz-danger-light border border-chatz-danger-border text-chatz-danger text-sm font-semibold hover:bg-chatz-danger/10 transition-all"
           >

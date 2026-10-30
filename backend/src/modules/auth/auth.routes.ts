@@ -35,6 +35,12 @@ router.post('/login', authController.login);
 // AUTENTICADAS
 // ==========================
 router.get('/me', authMiddleware, authController.me);
+router.put(
+  '/me/status',
+  authMiddleware,
+  requireRole('AGENT'),
+  authController.updateStatus
+);
 router.post(
   '/me/profile-picture',
   authMiddleware,
