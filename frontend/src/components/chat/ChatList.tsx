@@ -17,11 +17,10 @@ export function ChatList() {
   const navigate = useNavigate();
   const { id: activeId } = useParams<{ id: string }>();
   const user = useAuthStore((s) => s.user);
-  const { tickets, loading, fetchTickets } = useTicketsStore();
+  const { tickets, loading, error, fetchTickets } = useTicketsStore();
   const [filter, setFilter] = useState<Filter>('active');
   const [search, setSearch] = useState('');
   const [unreadMap, setUnreadMap] = useState<Record<string, number>>({});
-  const [reloadTrigger, setReloadTrigger] = useState(0);
 
   useEffect(() => {
     if (user?.role !== 'ADMIN' && (filter === 'all' || filter === 'resolved')) {
@@ -52,11 +51,11 @@ export function ChatList() {
     }
   }, [activeId]);
 
-  // 🔥 Carrega tickets (SEMPRE sem mine=true, pra incluir participantes)
+  // Carrega tickets sem mine=true para incluir conversas em que participa.
   useEffect(() => {
     if (!user) return;
     fetchTickets({});
-  }, [user, filter, fetchTickets, reloadTrigger]);
+  }, [user, fetchTickets]);
 
   // Socket.IO — reload em QUALQUER evento relevante
   useEffect(() => {
@@ -65,9 +64,7 @@ export function ChatList() {
 
     function reload() {
       console.log('🔄 [ChatList] Reloading tickets...');
-      fetchTickets({}).then(() => {
-        setReloadTrigger((r) => r + 1);
-      });
+      void fetchTickets({});
     }
 
     socket.on('ticket:new', reload);
@@ -183,7 +180,13 @@ export function ChatList() {
           </div>
         )}
 
-        {!loading && sorted.length === 0 && (
+        {!loading && error && (
+          <div role="alert" className="p-4 text-center text-chatz-danger text-sm">
+            {error}
+          </div>
+        )}
+
+        {!loading && !error && sorted.length === 0 && (
           <div className="p-6 text-center">
             <p className="text-chatz-text-muted text-sm mb-1">Nenhuma conversa</p>
             <p className="text-chatz-text-subtle text-xs">
@@ -195,7 +198,7 @@ export function ChatList() {
           </div>
         )}
 
-        {!loading &&
+        {!loading && !error &&
           sorted.map((ticket) => (
             <ChatListItem
               key={ticket.id}

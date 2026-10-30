@@ -294,7 +294,7 @@ async function handleAgentChoice(conversation: any, message: string): Promise<Bo
     data: { state: 'WAITING_ATTENDANCE', ticketId: ticket.id },
   });
 
-  emitToSector(ticket.sectorId, 'ticket:new', ticket);
+  emitToSector(ticket.sectorId, 'ticket:new', { id: ticket.id });
   if (ticket.requestedAgentId) {
     emitToUser(ticket.requestedAgentId, 'ticket:new', ticket);
   }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth';
 import { useMessagesStore } from '../../stores/messages';
 import { useTicketsStore } from '../../stores/tickets';
@@ -41,6 +41,7 @@ interface Sticker {
 
 export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const { messages, fetchMessages, addMessage, clear } = useMessagesStore();
   const assignTicket = useTicketsStore((s) => s.assignTicket);
@@ -204,9 +205,18 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       });
     }
 
+    function handleAccessRevoked(data: { ticketId: string }) {
+      if (data.ticketId !== id) return;
+      clear();
+      setTicket(null);
+      navigate('/chat', { replace: true });
+    }
+
     activeSocket.on('message:new', handleNew);
     activeSocket.on('ticket:updated', handleUpdated);
     activeSocket.on('typing:update', handleTypingUpdate);
+    activeSocket.on('ticket:join-error', handleAccessRevoked);
+    activeSocket.on('ticket:access-revoked', handleAccessRevoked);
 
     return () => {
       console.log('📌 [ChatWindow] Saindo da sala ticket:', id);
@@ -215,11 +225,13 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       activeSocket.off('message:new', handleNew);
       activeSocket.off('ticket:updated', handleUpdated);
       activeSocket.off('typing:update', handleTypingUpdate);
+      activeSocket.off('ticket:join-error', handleAccessRevoked);
+      activeSocket.off('ticket:access-revoked', handleAccessRevoked);
       if (isTypingRef.current) {
         activeSocket.emit('typing:stop', { ticketId: id });
       }
     };
-  }, [id, addMessage, user?.id]);
+  }, [id, addMessage, clear, navigate, user?.id]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

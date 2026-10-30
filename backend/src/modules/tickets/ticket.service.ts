@@ -9,12 +9,13 @@ import {
 import {
   canAssignTicket,
   canModifyTicket,
-  canViewTicket,
 } from './ticket.permissions';
+import { assertTicketAccess } from './ticket.access';
 import {
   emitToSector,
   emitToUser,
   emitToTicket,
+  removeUnauthorizedTicketRoomMembers,
 } from '../../sockets/socket.server';
 
 interface AuthUser {
@@ -56,7 +57,7 @@ export async function createTicket(user: AuthUser, data: CreateTicketInput) {
     },
   });
 
-  emitToSector(ticket.sectorId, 'ticket:new', ticket);
+  emitToSector(ticket.sectorId, 'ticket:new', { id: ticket.id });
   if (ticket.requestedAgentId) {
     emitToUser(ticket.requestedAgentId, 'ticket:new', ticket);
   }
@@ -80,7 +81,20 @@ export async function listTickets(user: AuthUser, query: ListTicketsQuery) {
         { agentId: user.id },
         { participants: { some: { userId: user.id } } },
         ...(user.sectorId
-          ? [{ sectorId: user.sectorId, agentId: null }]
+          ? [
+              {
+                sectorId: user.sectorId,
+                agentId: null,
+                requestedAgentId: null,
+                status: 'WAITING',
+              },
+              {
+                sectorId: user.sectorId,
+                agentId: null,
+                requestedAgentId: user.id,
+                status: 'WAITING',
+              },
+            ]
           : []),
       ];
     }
@@ -165,16 +179,7 @@ export async function getTicketById(user: AuthUser, id: string) {
 
   if (!ticket) throw new AppError('Ticket não encontrado', 404);
 
-  // Verifica permissão
-  if (!canViewTicket(user, ticket)) {
-    // Se é participante, permite
-    const isParticipant = await prisma.ticketParticipant.findUnique({
-      where: { ticketId_userId: { ticketId: id, userId: user.id } },
-    });
-    if (!isParticipant) {
-      throw new AppError('Sem permissão para ver este ticket', 403);
-    }
-  }
+  await assertTicketAccess(user, ticket);
 
   return ticket;
 }
@@ -186,17 +191,41 @@ export async function assignTicket(user: AuthUser, id: string) {
   const ticket = await prisma.ticket.findUnique({ where: { id } });
   if (!ticket) throw new AppError('Ticket não encontrado', 404);
 
-  if (user.role === 'AGENT' && user.sectorId && ticket.sectorId !== user.sectorId) {
-    throw new AppError('Você só pode assumir tickets do seu setor', 403);
-  }
-
   if (!canAssignTicket(user, ticket)) {
-    throw new AppError('Não é possível assumir este ticket', 403);
+    if (user.role === 'AGENT' && ticket.agentId !== null) {
+      throw new AppError('Este ticket já foi assumido', 409);
+    }
+    throw new AppError('Você só pode assumir tickets disponíveis no seu setor', 403);
   }
 
-  const updated = await prisma.ticket.update({
+  if (user.role === 'AGENT') {
+    const sectorId = user.sectorId;
+    if (!sectorId) {
+      throw new AppError('Seu usuário não está vinculado a um setor', 403);
+    }
+
+    const claim = await prisma.ticket.updateMany({
+      where: {
+        id,
+        agentId: null,
+        status: 'WAITING',
+        sectorId,
+        requestedAgentId: ticket.requestedAgentId,
+      },
+      data: { agentId: user.id, status: 'IN_PROGRESS' },
+    });
+    if (claim.count === 0) {
+      throw new AppError('Este ticket já foi assumido ou não está mais disponível', 409);
+    }
+  } else {
+    await prisma.ticket.update({
+      where: { id },
+      data: { agentId: user.id, status: 'IN_PROGRESS' },
+    });
+  }
+
+  const updated = await prisma.ticket.findUniqueOrThrow({
     where: { id },
-    data: { agentId: user.id, status: 'IN_PROGRESS' },
     include: {
       sector: { select: { id: true, name: true, slug: true } },
       client: {
@@ -219,7 +248,8 @@ export async function assignTicket(user: AuthUser, id: string) {
     data: { state: 'IN_ATTENDANCE' },
   });
 
-  emitToSector(ticket.sectorId, 'ticket:assigned', updated);
+  await removeUnauthorizedTicketRoomMembers(id);
+  emitToSector(ticket.sectorId, 'ticket:assigned', { id: updated.id });
   emitToUser(user.id, 'ticket:assigned', updated);
 
   return updated;
@@ -274,7 +304,7 @@ export async function updateStatus(user: AuthUser, id: string, data: UpdateStatu
     });
   }
 
-  emitToSector(ticket.sectorId, 'ticket:updated', updated);
+  emitToSector(ticket.sectorId, 'ticket:updated', { id: updated.id });
   emitToTicket(id, 'ticket:updated', updated);
 
   return updated;
@@ -315,7 +345,7 @@ export async function updatePriority(user: AuthUser, id: string, data: UpdatePri
     },
   });
 
-  emitToSector(ticket.sectorId, 'ticket:updated', updated);
+  emitToSector(ticket.sectorId, 'ticket:updated', { id: updated.id });
   emitToTicket(id, 'ticket:updated', updated);
 
   return updated;
@@ -403,7 +433,7 @@ export async function addParticipant(
   }
 
   // 🔥 Emite pro setor
-  emitToSector(ticket.sectorId, 'ticket:updated', ticket);
+  emitToSector(ticket.sectorId, 'ticket:updated', { id: ticket.id });
 
   return participant;
 }
@@ -431,12 +461,13 @@ export async function removeParticipant(
 
   await prisma.ticketParticipant.delete({ where: { id: participant.id } });
 
+  await removeUnauthorizedTicketRoomMembers(ticketId);
   emitToUser(participantUserId, 'ticket:participant-removed', { ticketId });
   emitToTicket(ticketId, 'ticket:participant-removed', {
     ticketId,
     userId: participantUserId,
   });
-  emitToSector(ticket.sectorId, 'ticket:updated', ticket);
+  emitToSector(ticket.sectorId, 'ticket:updated', { id: ticket.id });
 
   return { ok: true };
 }
@@ -447,6 +478,7 @@ export async function removeParticipant(
 export async function listParticipants(user: AuthUser, ticketId: string) {
   const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
   if (!ticket) throw new AppError('Ticket não encontrado', 404);
+  await assertTicketAccess(user, ticket);
 
   const participants = await prisma.ticketParticipant.findMany({
     where: { ticketId },

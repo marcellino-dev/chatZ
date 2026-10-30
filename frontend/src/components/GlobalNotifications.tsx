@@ -26,9 +26,9 @@ interface MessageNewPayload {
 
 interface TicketNewPayload {
   id: string;
-  subject: string;
-  sectorId: string;
-  client: { name: string; phone: string };
+  subject?: string;
+  sectorId?: string;
+  client?: { name: string; phone: string };
   requestedAgentId?: string | null;
   agentId?: string | null;
   participants?: Array<{
@@ -161,6 +161,13 @@ export function GlobalNotifications() {
     // ==========================
     async function handleTicketNew(ticket: TicketNewPayload) {
       console.log('🎯 [GlobalNotifications] ticket:new:', ticket);
+
+      // Setor receives only the ID; details are sent only to ticket owners or participants.
+      if (Object.keys(ticket).length === 1) {
+        await reloadTickets();
+        return;
+      }
+
       console.log('   requestedAgentId:', ticket.requestedAgentId);
       console.log('   userId:', user?.id);
       console.log('   participants:', ticket.participants);

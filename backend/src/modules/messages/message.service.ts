@@ -15,6 +15,7 @@ import {
 import { env } from '../../config/env';
 import { uploadsDir } from '../uploads/upload.service';
 import { SendMessageInput } from './message.schemas';
+import { assertTicketAccess } from '../tickets/ticket.access';
 
 interface AuthUser {
   id: string;
@@ -29,23 +30,7 @@ export async function listMessages(user: AuthUser, ticketId: string) {
   const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
   if (!ticket) throw new AppError('Ticket não encontrado', 404);
 
-  if (user.role === 'CLIENT' && ticket.clientId !== user.id) {
-    throw new AppError('Sem permissão', 403);
-  }
-  if (
-    user.role === 'AGENT' &&
-    user.sectorId &&
-    ticket.sectorId !== user.sectorId &&
-    ticket.agentId !== user.id
-  ) {
-    // Verifica se é participante
-    const isParticipant = await prisma.ticketParticipant.findUnique({
-      where: { ticketId_userId: { ticketId, userId: user.id } },
-    });
-    if (!isParticipant) {
-      throw new AppError('Sem permissão', 403);
-    }
-  }
+  await assertTicketAccess(user, ticket);
 
   const messages = await prisma.message.findMany({
     where: { ticketId },
@@ -148,7 +133,7 @@ export async function sendMessage(
   });
 
   emitToTicket(ticketId, 'message:new', message);
-  emitToSector(ticket.sectorId, 'ticket:updated', ticket);
+  emitToSector(ticket.sectorId, 'ticket:updated', { id: ticket.id });
 
   for (const participant of participants) {
     if (participant.userId !== user.id) {

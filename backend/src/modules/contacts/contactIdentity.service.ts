@@ -173,7 +173,7 @@ async function emitClientTicketUpdates(clientIds: string[]) {
   });
 
   for (const ticket of tickets) {
-    emitToSector(ticket.sectorId, 'ticket:updated', ticket);
+    emitToSector(ticket.sectorId, 'ticket:updated', { id: ticket.id });
     emitToTicket(ticket.id, 'ticket:updated', ticket);
   }
 }

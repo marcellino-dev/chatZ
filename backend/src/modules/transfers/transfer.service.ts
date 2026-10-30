@@ -4,8 +4,10 @@ import {
   emitToSector,
   emitToUser,
   emitToTicket,
+  removeUnauthorizedTicketRoomMembers,
 } from '../../sockets/socket.server';
 import { TransferTicketInput } from './transfer.schemas';
+import { assertTicketAccess } from '../tickets/ticket.access';
 
 interface AuthUser {
   id: string;
@@ -103,13 +105,15 @@ export async function transferTicket(
       },
     });
 
+    await removeUnauthorizedTicketRoomMembers(ticketId);
+
     // 🔔 Notifica
     emitToUser(target.id, 'ticket:transferred', {
       ticket: updated,
       from: { id: user.id },
       reason: data.reason,
     });
-    emitToSector(ticket.sectorId, 'ticket:updated', updated);
+    emitToSector(ticket.sectorId, 'ticket:updated', { id: updated.id });
     emitToTicket(ticketId, 'ticket:updated', updated);
 
     return { ticket: updated, transfer };
@@ -166,15 +170,17 @@ export async function transferTicket(
       },
     });
 
+    await removeUnauthorizedTicketRoomMembers(ticketId);
+
     // 🔔 Notifica
     // 1. Setor de origem (some da fila)
     emitToSector(ticket.sectorId, 'ticket:transferred', {
-      ticket: updated,
+      ticket: { id: updated.id },
       fromSectorId: ticket.sectorId,
     });
 
     // 2. Setor de destino (aparece na fila)
-    emitToSector(targetSector.id, 'ticket:new', updated);
+    emitToSector(targetSector.id, 'ticket:new', { id: updated.id });
 
     // 3. Quem tava vendo
     emitToTicket(ticketId, 'ticket:updated', updated);
@@ -195,18 +201,7 @@ export async function listTransfers(user: AuthUser, ticketId: string) {
 
   if (!ticket) throw new AppError('Ticket não encontrado', 404);
 
-  // Permissões
-  if (user.role === 'CLIENT' && ticket.clientId !== user.id) {
-    throw new AppError('Sem permissão', 403);
-  }
-  if (
-    user.role === 'AGENT' &&
-    user.sectorId &&
-    ticket.sectorId !== user.sectorId &&
-    ticket.agentId !== user.id
-  ) {
-    throw new AppError('Sem permissão', 403);
-  }
+  await assertTicketAccess(user, ticket);
 
   const transfers = await prisma.transfer.findMany({
     where: { ticketId },

@@ -1,8 +1,13 @@
-import { Prisma, type Ticket } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { AppError } from '../../middlewares/errorHandler';
-import { emitToSector, emitToUser } from '../../sockets/socket.server';
-import { canViewTicket } from '../tickets/ticket.permissions';
+import {
+  emitToSector,
+  emitToUser,
+  removeUnauthorizedTicketRoomMembers,
+} from '../../sockets/socket.server';
+import { assertTicketAccess } from '../tickets/ticket.access';
+import { canAssignTicket } from '../tickets/ticket.permissions';
 import {
   findClientUsersByPhone,
   normalizeBrazilianPhone,
@@ -185,19 +190,6 @@ export async function saveTicketClientAsContact(
   }
 }
 
-async function assertTicketAccess(
-  user: AuthUser,
-  ticket: Ticket
-) {
-  if (canViewTicket(user, ticket)) return;
-  const participant = await prisma.ticketParticipant.findUnique({
-    where: { ticketId_userId: { ticketId: ticket.id, userId: user.id } },
-  });
-  if (!participant) {
-    throw new AppError('Sem permissão para ver este ticket', 403);
-  }
-}
-
 export async function createContact(data: CreateContactInput) {
   try {
     const contact = await prisma.contact.create({
@@ -347,11 +339,35 @@ export async function startConversation(
     }
 
     if (ticket.agentId === null) {
-      ticket = await prisma.ticket.update({
-        where: { id: ticket.id },
+      if (!canAssignTicket(user, ticket)) {
+        throw new AppError('Este atendimento não está disponível para você', 403);
+      }
+
+      const sectorId = user.role === 'AGENT' ? user.sectorId : undefined;
+      if (user.role === 'AGENT' && !sectorId) {
+        throw new AppError('Seu usuário não está vinculado a um setor', 403);
+      }
+
+      const claim = await prisma.ticket.updateMany({
+        where: {
+          id: ticket.id,
+          agentId: null,
+          status: 'WAITING',
+          requestedAgentId: ticket.requestedAgentId,
+          ...(sectorId && { sectorId }),
+        },
         data: { agentId: user.id, status: 'IN_PROGRESS' },
       });
-      emitToSector(ticket.sectorId, 'ticket:assigned', ticket);
+      if (claim.count === 0) {
+        throw new AppError('Este atendimento já foi assumido', 409);
+      }
+
+      ticket = await prisma.ticket.findUniqueOrThrow({
+        where: { id: ticket.id },
+        include: ticketInclude,
+      });
+      await removeUnauthorizedTicketRoomMembers(ticket.id);
+      emitToSector(ticket.sectorId, 'ticket:assigned', { id: ticket.id });
       emitToUser(user.id, 'ticket:assigned', ticket);
     }
 
@@ -410,7 +426,7 @@ export async function startConversation(
     });
   });
 
-  emitToSector(sectorId, 'ticket:new', createdTicket);
+  emitToSector(sectorId, 'ticket:new', { id: createdTicket.id });
   emitToUser(user.id, 'ticket:new', createdTicket);
 
   return createdTicket;

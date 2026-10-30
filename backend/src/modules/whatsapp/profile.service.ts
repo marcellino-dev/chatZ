@@ -71,7 +71,7 @@ export async function refreshWhatsAppProfilePicture(phone: string) {
     });
 
     for (const ticket of tickets) {
-      emitToSector(ticket.sectorId, 'ticket:updated', ticket);
+      emitToSector(ticket.sectorId, 'ticket:updated', { id: ticket.id });
       emitToTicket(ticket.id, 'ticket:updated', ticket);
     }
   } catch (error) {

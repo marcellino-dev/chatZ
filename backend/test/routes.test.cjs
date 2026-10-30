@@ -286,6 +286,167 @@ test('admins can list all ticket statuses while agents only receive active and w
   assert.ok(adminTickets.some((ticket) => ticket.id === waitingTicket.id));
 });
 
+test('agents only see and claim waiting tickets in their sector or addressed to them', async () => {
+  const [
+    unassignedTicket,
+    requestedTicket,
+    foreignTicket,
+    noSectorAgent,
+    noSectorQueueTicket,
+    raceTicket,
+  ] =
+    await Promise.all([
+      prisma.ticket.create({
+        data: {
+          subject: 'Fila do setor',
+          status: 'WAITING',
+          sectorId: fixture.sector.id,
+          clientId: fixture.client.id,
+        },
+      }),
+      prisma.ticket.create({
+        data: {
+          subject: 'Direcionado ao outro atendente',
+          status: 'WAITING',
+          sectorId: fixture.sector.id,
+          clientId: fixture.client.id,
+          requestedAgentId: fixture.otherAgent.id,
+        },
+      }),
+      prisma.ticket.create({
+        data: {
+          subject: 'Fila de outro setor',
+          status: 'WAITING',
+          sectorId: fixture.supportSector.id,
+          clientId: fixture.client.id,
+        },
+      }),
+      prisma.user.create({
+        data: {
+          name: 'Atendente sem setor',
+          role: 'AGENT',
+          email: `no-sector-${process.pid}@test.invalid`,
+        },
+      }),
+      prisma.ticket.create({
+        data: {
+          subject: 'Fila sem setor vinculado',
+          status: 'WAITING',
+          sectorId: fixture.sector.id,
+          clientId: fixture.client.id,
+        },
+      }),
+      prisma.ticket.create({
+        data: {
+          subject: 'Disputa de atendimento',
+          status: 'WAITING',
+          sectorId: fixture.sector.id,
+          clientId: fixture.client.id,
+        },
+      }),
+    ]);
+
+  const ownerHeaders = {
+    authorization: `Bearer ${signToken({
+      sub: fixture.owner.id,
+      role: 'AGENT',
+    })}`,
+  };
+  const otherAgentHeaders = {
+    authorization: `Bearer ${signToken({
+      sub: fixture.otherAgent.id,
+      role: 'AGENT',
+    })}`,
+  };
+  const noSectorHeaders = {
+    authorization: `Bearer ${signToken({
+      sub: noSectorAgent.id,
+      role: 'AGENT',
+    })}`,
+  };
+
+  const listResponse = await fetch(`${baseUrl}/tickets`, {
+    headers: ownerHeaders,
+  });
+  assert.equal(listResponse.status, 200);
+  const ownerTickets = await listResponse.json();
+  assert.ok(ownerTickets.some((ticket) => ticket.id === unassignedTicket.id));
+  assert.ok(!ownerTickets.some((ticket) => ticket.id === requestedTicket.id));
+  assert.ok(!ownerTickets.some((ticket) => ticket.id === foreignTicket.id));
+
+  const requestedListResponse = await fetch(`${baseUrl}/tickets`, {
+    headers: otherAgentHeaders,
+  });
+  const requestedTickets = await requestedListResponse.json();
+  assert.ok(requestedTickets.some((ticket) => ticket.id === requestedTicket.id));
+
+  const assignOwnResponse = await fetch(
+    `${baseUrl}/tickets/${unassignedTicket.id}/assign`,
+    { method: 'PATCH', headers: ownerHeaders },
+  );
+  assert.equal(assignOwnResponse.status, 200);
+  assert.equal((await assignOwnResponse.json()).agentId, fixture.owner.id);
+
+  const assignRequestedByOtherResponse = await fetch(
+    `${baseUrl}/tickets/${requestedTicket.id}/assign`,
+    { method: 'PATCH', headers: ownerHeaders },
+  );
+  assert.equal(assignRequestedByOtherResponse.status, 403);
+
+  const assignRequestedResponse = await fetch(
+    `${baseUrl}/tickets/${requestedTicket.id}/assign`,
+    { method: 'PATCH', headers: otherAgentHeaders },
+  );
+  assert.equal(assignRequestedResponse.status, 200);
+  assert.equal((await assignRequestedResponse.json()).agentId, fixture.otherAgent.id);
+
+  const raceResponses = await Promise.all([
+    fetch(`${baseUrl}/tickets/${raceTicket.id}/assign`, {
+      method: 'PATCH',
+      headers: ownerHeaders,
+    }),
+    fetch(`${baseUrl}/tickets/${raceTicket.id}/assign`, {
+      method: 'PATCH',
+      headers: otherAgentHeaders,
+    }),
+  ]);
+  assert.deepEqual(
+    raceResponses.map((response) => response.status).sort(),
+    [200, 409],
+  );
+  const claimedRaceTicket = await prisma.ticket.findUnique({
+    where: { id: raceTicket.id },
+  });
+  assert.ok([fixture.owner.id, fixture.otherAgent.id].includes(claimedRaceTicket.agentId));
+
+  for (const suffix of [
+    '',
+    '/messages',
+    '/participants',
+    '/transfers',
+  ]) {
+    const response = await fetch(
+      `${baseUrl}/tickets/${foreignTicket.id}${suffix}`,
+      {
+        ...(suffix === '' ? {} : { method: 'GET' }),
+        headers: ownerHeaders,
+      },
+    );
+    assert.equal(response.status, 403, `acesso negado a /tickets/:id${suffix}`);
+  }
+
+  const noSectorTicketResponse = await fetch(
+    `${baseUrl}/tickets/${noSectorQueueTicket.id}`,
+    { headers: noSectorHeaders },
+  );
+  assert.equal(noSectorTicketResponse.status, 403);
+  const noSectorAssignResponse = await fetch(
+    `${baseUrl}/tickets/${noSectorQueueTicket.id}/assign`,
+    { method: 'PATCH', headers: noSectorHeaders },
+  );
+  assert.equal(noSectorAssignResponse.status, 403);
+});
+
 test('malformed JSON is reported as a client error', async () => {
   const response = await fetch(`${baseUrl}/auth/login`, {
     method: 'POST',

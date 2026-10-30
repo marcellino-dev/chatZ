@@ -2,6 +2,8 @@ import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import { verifyToken } from '../utils/jwt';
 import { prisma } from '../config/prisma';
+import { hasTicketAccess } from '../modules/tickets/ticket.access';
+import { canViewTicket } from '../modules/tickets/ticket.permissions';
 
 let io: Server | null = null;
 
@@ -67,10 +69,22 @@ export function initSocketServer(httpServer: HttpServer) {
     }
 
     // Ticket rooms
-    socket.on('ticket:join', (ticketId: string) => {
-      socket.join(`ticket:${ticketId}`);
-      console.log(`   └─ ${user.name} entrou na sala ticket:${ticketId}`);
-      socket.emit('ticket:joined', { ticketId });
+    socket.on('ticket:join', async (ticketId: unknown) => {
+      if (typeof ticketId !== 'string' || !ticketId.trim()) return;
+      try {
+        const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+        if (!ticket || !(await hasTicketAccess(user, ticket))) {
+          socket.emit('ticket:join-error', { ticketId });
+          return;
+        }
+
+        socket.join(`ticket:${ticketId}`);
+        console.log(`   └─ ${user.name} entrou na sala ticket:${ticketId}`);
+        socket.emit('ticket:joined', { ticketId });
+      } catch (error) {
+        console.error(`Erro ao validar acesso à sala ticket:${ticketId}`, error);
+        socket.emit('ticket:join-error', { ticketId });
+      }
     });
 
     socket.on('ticket:leave', (ticketId: string) => {
@@ -81,27 +95,47 @@ export function initSocketServer(httpServer: HttpServer) {
     // ==========================
     // TYPING INDICATOR
     // ==========================
-    socket.on('typing:start', (data: { ticketId: string }) => {
-      if (!data?.ticketId) return;
-      // Repassa pra sala do ticket (menos pra ele mesmo)
-      socket.to(`ticket:${data.ticketId}`).emit('typing:update', {
-        ticketId: data.ticketId,
-        userId: user.id,
-        userName: user.name,
-        userRole: user.role,
-        typing: true,
-      });
+    const updateTyping = async (data: unknown, typing: boolean) => {
+      if (
+        !data ||
+        typeof data !== 'object' ||
+        !('ticketId' in data) ||
+        typeof data.ticketId !== 'string' ||
+        !data.ticketId.trim()
+      ) {
+        return;
+      }
+
+      const ticketId = data.ticketId;
+      const room = `ticket:${ticketId}`;
+      if (!socket.rooms.has(room)) return;
+
+      try {
+        const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+        if (!ticket || !(await hasTicketAccess(user, ticket))) {
+          socket.leave(room);
+          socket.emit('ticket:access-revoked', { ticketId });
+          return;
+        }
+
+        socket.to(room).emit('typing:update', {
+          ticketId,
+          userId: user.id,
+          userName: user.name,
+          userRole: user.role,
+          typing,
+        });
+      } catch (error) {
+        console.error(`Erro ao validar acesso de digitação ao ticket:${ticketId}`, error);
+      }
+    };
+
+    socket.on('typing:start', (data: unknown) => {
+      void updateTyping(data, true);
     });
 
-    socket.on('typing:stop', (data: { ticketId: string }) => {
-      if (!data?.ticketId) return;
-      socket.to(`ticket:${data.ticketId}`).emit('typing:update', {
-        ticketId: data.ticketId,
-        userId: user.id,
-        userName: user.name,
-        userRole: user.role,
-        typing: false,
-      });
+    socket.on('typing:stop', (data: unknown) => {
+      void updateTyping(data, false);
     });
 
     socket.on('disconnect', () => {
@@ -121,7 +155,11 @@ export function getIO(): Server {
   return io;
 }
 
-export function emitToSector(sectorId: string, event: string, data: any) {
+export function emitToSector(
+  sectorId: string,
+  event: string,
+  data: { id: string } | { ticket: { id: string }; fromSectorId: string }
+) {
   if (!io) return;
   io.to(`sector:${sectorId}`).emit(event, data);
   console.log(`📡 emitToSector → sector:${sectorId} → ${event}`);
@@ -144,4 +182,34 @@ export function emitToTicket(ticketId: string, event: string, data: any) {
     `📡 emitToTicket → ${room} → ${event} (${sockets?.size ?? 0} clientes)`
   );
   io.to(room).emit(event, data);
+}
+
+export async function removeUnauthorizedTicketRoomMembers(ticketId: string) {
+  if (!io) return;
+
+  const room = `ticket:${ticketId}`;
+  const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+  if (!ticket) {
+    await io.in(room).socketsLeave(room);
+    return;
+  }
+
+  const participants = await prisma.ticketParticipant.findMany({
+    where: { ticketId },
+    select: { userId: true },
+  });
+  const participantIds = new Set(participants.map(({ userId }) => userId));
+  const sockets = await io.in(room).fetchSockets();
+
+  for (const socket of sockets) {
+    const roomUser = socket.data.user as {
+      id: string;
+      role: string;
+      sectorId: string | null;
+    };
+    if (!canViewTicket(roomUser, ticket) && !participantIds.has(roomUser.id)) {
+      await socket.leave(room);
+      socket.emit('ticket:access-revoked', { ticketId });
+    }
+  }
 }
