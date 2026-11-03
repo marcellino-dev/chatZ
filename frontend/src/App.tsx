@@ -10,6 +10,7 @@ import { QuickReplies } from './pages/QuickReplies';
 import { FollowUps } from './pages/FollowUps';
 import { History } from './pages/History';
 import { Performance } from './pages/Performance';
+import { KnowledgeBase } from './pages/KnowledgeBase';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { GlobalNotifications } from './components/GlobalNotifications';
 import { useAuthStore } from './stores/auth';
@@ -45,6 +46,9 @@ export default function App() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/contacts" element={<Contacts />} />
           <Route path="/quick-replies" element={<QuickReplies />} />
+          <Route element={<ProtectedRoute roles={['ADMIN', 'AGENT']} />}>
+            <Route path="/knowledge-base" element={<KnowledgeBase />} />
+          </Route>
           <Route element={<ProtectedRoute roles={['ADMIN', 'AGENT']} />}>
             <Route path="/follow-ups" element={<FollowUps />} />
           </Route>

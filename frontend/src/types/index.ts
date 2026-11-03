@@ -187,6 +187,16 @@ export interface QuickReply {
   updatedAt: string;
 }
 
+export interface KnowledgeArticle {
+  id: string;
+  title: string;
+  category: string;
+  content: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ==========================
 // TRANSFERÊNCIAS
 // ==========================

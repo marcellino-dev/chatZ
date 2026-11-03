@@ -69,6 +69,7 @@ export function IconBar() {
       });
     }
     items.push(
+      { to: '/knowledge-base', label: 'Base de conhecimento', icon: <KnowledgeBaseIcon /> },
       { to: '/contacts', label: 'Contatos', icon: <ContactsIcon /> },
       { to: '/quick-replies', label: 'Respostas prontas', icon: <QuickReplyIcon /> }
     );
@@ -256,6 +257,15 @@ function QuickReplyIcon() {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z" />
       <path d="m9 12 2 2 4-4" />
+    </svg>
+  );
+}
+
+function KnowledgeBaseIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z" />
+      <path d="M4 5.5v16M8 7h8M8 11h8M8 15h5" />
     </svg>
   );
 }

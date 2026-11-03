@@ -7,6 +7,7 @@ import { api, getErrorMessage } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
 import { AttachmentPreview, type Attachment } from './AttachmentPreview';
 import { SimpleEmojiPicker } from './EmojiPicker';
+import { KnowledgeBaseConsultation } from './KnowledgeBaseConsultation';
 import { ProfileAvatar } from '../ProfileAvatar';
 import type { Ticket, Message, QuickReply, TicketNote } from '../../types';
 
@@ -78,6 +79,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   const [stickerName, setStickerName] = useState('');
   const [stickerPickerOpen, setStickerPickerOpen] = useState(false);
   const [favoriteMenuMessageId, setFavoriteMenuMessageId] = useState<string | null>(null);
+  const [knowledgeBaseOpen, setKnowledgeBaseOpen] = useState(false);
 
   const [emojiOpen, setEmojiOpen] = useState(false);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
@@ -893,6 +895,20 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
         </button>
 
         <div className="flex items-center gap-2 shrink-0">
+          {user?.role !== 'CLIENT' && (
+            <button
+              type="button"
+              onClick={() => setKnowledgeBaseOpen(true)}
+              title="Consultar base de conhecimento"
+              aria-label="Consultar base de conhecimento"
+              className="flex h-9 items-center gap-2 rounded-chatz px-3 text-sm
+                         text-chatz-text-muted transition-colors hover:bg-chatz-surface-hover
+                         hover:text-chatz-text"
+            >
+              <KnowledgeBaseIcon />
+              <span className="hidden xl:inline">Base de conhecimento</span>
+            </button>
+          )}
           {canAssign && (
             <button
               onClick={handleAssign}
@@ -1347,6 +1363,9 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
           </div>
         )}
       </footer>
+      {knowledgeBaseOpen && user?.role !== 'CLIENT' && (
+        <KnowledgeBaseConsultation onClose={() => setKnowledgeBaseOpen(false)} />
+      )}
     </div>
   );
 }
@@ -1576,6 +1595,9 @@ function getStickerUrl(url: string): string {
 
 function InfoIcon() {
   return (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>);
+}
+function KnowledgeBaseIcon() {
+  return (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z" /><path d="M4 5.5v16M8 7h8M8 11h8M8 15h5" /></svg>);
 }
 function SendIcon() {
   return (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" /></svg>);

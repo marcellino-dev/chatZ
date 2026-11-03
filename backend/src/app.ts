@@ -13,6 +13,7 @@ import stickerRoutes from './modules/stickers/sticker.routes';
 import tagRoutes from './modules/tags/tag.routes';
 import followUpRoutes from './modules/followUps/followUp.routes';
 import performanceRoutes from './modules/performance/performance.routes';
+import knowledgeBaseRoutes from './modules/knowledgeBase/knowledgeBase.routes';
 import { errorHandler } from './middlewares/errorHandler';
 
 const app = express();
@@ -43,6 +44,7 @@ app.use('/stickers', stickerRoutes);
 app.use('/tags', tagRoutes);
 app.use('/follow-ups', followUpRoutes);
 app.use('/performance', performanceRoutes);
+app.use('/knowledge-base', knowledgeBaseRoutes);
 app.use('/bot', botRoutes);
 app.use('/whatsapp', whatsappRoutes);
 app.use('/uploads', uploadRoutes);

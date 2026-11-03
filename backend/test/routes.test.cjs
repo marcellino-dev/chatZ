@@ -142,6 +142,9 @@ const routes = [
   ['GET', '/follow-ups/mine', 401],
   ['GET', '/follow-ups/mine/overdue-count', 401],
   ['GET', '/performance/mine', 401],
+  ['GET', '/knowledge-base', 401],
+  ['POST', '/knowledge-base', 401],
+  ['PATCH', '/knowledge-base/test-article', 401],
   ['POST', '/follow-ups', 401],
   ['PATCH', '/follow-ups/test-follow-up', 401],
   ['POST', '/follow-ups/test-follow-up/complete', 401],
@@ -171,6 +174,85 @@ test('all registered API routes respond with their expected access or validation
       assert.notEqual(response.status, 404);
     });
   }
+});
+
+test('knowledge base allows agents to read active articles and only admins to manage them', async () => {
+  const admin = await prisma.user.create({
+    data: {
+      name: 'Administrador da base',
+      role: 'ADMIN',
+      email: `knowledge-admin-${process.pid}@test.invalid`,
+    },
+  });
+  const agentToken = signToken({ sub: fixture.owner.id, role: 'AGENT' });
+  const adminToken = signToken({ sub: admin.id, role: 'ADMIN' });
+  const agentHeaders = {
+    authorization: `Bearer ${agentToken}`,
+    'content-type': 'application/json',
+  };
+  const adminHeaders = {
+    authorization: `Bearer ${adminToken}`,
+    'content-type': 'application/json',
+  };
+
+  const forbiddenCreate = await fetch(`${baseUrl}/knowledge-base`, {
+    method: 'POST',
+    headers: agentHeaders,
+    body: JSON.stringify({
+      title: 'Orientação teste',
+      category: 'Atendimento',
+      content: 'Conteúdo de consulta.',
+    }),
+  });
+  assert.equal(forbiddenCreate.status, 403);
+
+  const createResponse = await fetch(`${baseUrl}/knowledge-base`, {
+    method: 'POST',
+    headers: adminHeaders,
+    body: JSON.stringify({
+      title: 'Prazo de análise',
+      category: 'Financeiro',
+      content: 'O prazo de análise é de três dias úteis.',
+    }),
+  });
+  assert.equal(createResponse.status, 201);
+  const article = await createResponse.json();
+  assert.equal(article.active, true);
+
+  const searchResponse = await fetch(
+    `${baseUrl}/knowledge-base?q=${encodeURIComponent('três dias')}`,
+    { headers: agentHeaders },
+  );
+  assert.equal(searchResponse.status, 200);
+  assert.deepEqual((await searchResponse.json()).map((item) => item.id), [article.id]);
+
+  const forbiddenUpdate = await fetch(`${baseUrl}/knowledge-base/${article.id}`, {
+    method: 'PATCH',
+    headers: agentHeaders,
+    body: JSON.stringify({ content: 'Alteração não permitida.' }),
+  });
+  assert.equal(forbiddenUpdate.status, 403);
+
+  const archiveResponse = await fetch(`${baseUrl}/knowledge-base/${article.id}`, {
+    method: 'PATCH',
+    headers: adminHeaders,
+    body: JSON.stringify({ active: false }),
+  });
+  assert.equal(archiveResponse.status, 200);
+  assert.equal((await archiveResponse.json()).active, false);
+
+  const hiddenFromAgent = await fetch(`${baseUrl}/knowledge-base`, {
+    headers: agentHeaders,
+  });
+  assert.equal(hiddenFromAgent.status, 200);
+  assert.equal((await hiddenFromAgent.json()).some((item) => item.id === article.id), false);
+
+  const visibleToAdmin = await fetch(
+    `${baseUrl}/knowledge-base?includeArchived=true`,
+    { headers: adminHeaders },
+  );
+  assert.equal(visibleToAdmin.status, 200);
+  assert.equal((await visibleToAdmin.json()).some((item) => item.id === article.id), true);
 });
 
 test('agent performance tracks assignment periods, limits metrics to the signed-in agent, and captures WhatsApp ratings', async () => {
