@@ -141,6 +141,7 @@ const routes = [
   ['GET', '/tags', 401],
   ['GET', '/follow-ups/mine', 401],
   ['GET', '/follow-ups/mine/overdue-count', 401],
+  ['GET', '/performance/mine', 401],
   ['POST', '/follow-ups', 401],
   ['PATCH', '/follow-ups/test-follow-up', 401],
   ['POST', '/follow-ups/test-follow-up/complete', 401],
@@ -170,6 +171,97 @@ test('all registered API routes respond with their expected access or validation
       assert.notEqual(response.status, 404);
     });
   }
+});
+
+test('agent performance tracks assignment periods, limits metrics to the signed-in agent, and captures WhatsApp ratings', async () => {
+  const ticket = await prisma.ticket.create({
+    data: {
+      subject: 'Atendimento para métricas',
+      status: 'WAITING',
+      sectorId: fixture.sector.id,
+      clientId: fixture.client.id,
+    },
+  });
+  const ownerToken = signToken({ sub: fixture.owner.id, role: 'AGENT' });
+  const ownerHeaders = {
+    authorization: `Bearer ${ownerToken}`,
+    'content-type': 'application/json',
+  };
+
+  const assignResponse = await fetch(`${baseUrl}/tickets/${ticket.id}/assign`, {
+    method: 'PATCH',
+    headers: ownerHeaders,
+  });
+  assert.equal(assignResponse.status, 200);
+  const firstSession = await prisma.agentTicketSession.findFirst({
+    where: { ticketId: ticket.id, agentId: fixture.owner.id },
+  });
+  assert.ok(firstSession);
+  assert.equal(firstSession.endedAt, null);
+
+  const transferResponse = await fetch(`${baseUrl}/tickets/${ticket.id}/transfers`, {
+    method: 'POST',
+    headers: ownerHeaders,
+    body: JSON.stringify({ toUserId: fixture.otherAgent.id }),
+  });
+  assert.equal(transferResponse.status, 200);
+  const closedSession = await prisma.agentTicketSession.findUnique({
+    where: { id: firstSession.id },
+  });
+  assert.ok(closedSession.endedAt);
+  const secondSession = await prisma.agentTicketSession.findFirst({
+    where: { ticketId: ticket.id, agentId: fixture.otherAgent.id },
+  });
+  assert.ok(secondSession);
+  assert.equal(secondSession.endedAt, null);
+
+  const otherToken = signToken({ sub: fixture.otherAgent.id, role: 'AGENT' });
+  const closeResponse = await fetch(`${baseUrl}/tickets/${ticket.id}/status`, {
+    method: 'PATCH',
+    headers: {
+      authorization: `Bearer ${otherToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ status: 'RESOLVED' }),
+  });
+  assert.equal(closeResponse.status, 200);
+  assert.ok((await prisma.agentTicketSession.findUnique({ where: { id: secondSession.id } })).endedAt);
+  const rating = await prisma.ticketRating.findUnique({ where: { ticketId: ticket.id } });
+  assert.ok(rating);
+  assert.equal(rating.agentId, fixture.otherAgent.id);
+
+  const from = new Date(Date.now() - 60 * 60 * 1000);
+  const to = new Date(Date.now() + 60 * 60 * 1000);
+  const metricsResponse = await fetch(
+    `${baseUrl}/performance/mine?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`,
+    { headers: { authorization: `Bearer ${ownerToken}` } },
+  );
+  assert.equal(metricsResponse.status, 200);
+  const metrics = await metricsResponse.json();
+  assert.equal(metrics.assignmentsStarted, 1);
+  assert.equal(metrics.ratingsReceived, 0);
+
+  const otherMetricsResponse = await fetch(
+    `${baseUrl}/performance/mine?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`,
+    { headers: { authorization: `Bearer ${otherToken}` } },
+  );
+  assert.equal((await otherMetricsResponse.json()).assignmentsStarted, 1);
+
+  const { captureTicketRating } = require('../dist/modules/performance/performance.service.js');
+  const thankYou = await captureTicketRating(
+    fixture.client.phone,
+    `#${rating.protocol} 5`,
+  );
+  assert.equal(thankYou, 'Obrigado por avaliar nosso atendimento!');
+  assert.equal(
+    (await prisma.ticketRating.findUnique({ where: { id: rating.id } })).score,
+    5,
+  );
+  const duplicateReply = await captureTicketRating(
+    fixture.client.phone,
+    `#${rating.protocol} 4`,
+  );
+  assert.equal(duplicateReply, 'Essa avaliação já foi recebida. Obrigado!');
 });
 
 test('agents can update only their own status and admins cannot use the agent status route', async () => {

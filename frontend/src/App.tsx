@@ -9,6 +9,7 @@ import { Contacts } from './pages/Contacts';
 import { QuickReplies } from './pages/QuickReplies';
 import { FollowUps } from './pages/FollowUps';
 import { History } from './pages/History';
+import { Performance } from './pages/Performance';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { GlobalNotifications } from './components/GlobalNotifications';
 import { useAuthStore } from './stores/auth';
@@ -49,6 +50,7 @@ export default function App() {
           </Route>
           <Route element={<ProtectedRoute roles={['AGENT']} />}>
             <Route path="/history" element={<History />} />
+            <Route path="/performance" element={<Performance />} />
           </Route>
           <Route element={<ProtectedRoute roles={['ADMIN']} />}>
             <Route path="/sectors" element={<Sectors />} />

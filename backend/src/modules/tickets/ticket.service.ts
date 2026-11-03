@@ -13,6 +13,11 @@ import {
 } from './ticket.permissions';
 import { assertTicketAccess } from './ticket.access';
 import {
+  endAgentTicketSession,
+  requestTicketRating,
+  startAgentTicketSession,
+} from '../performance/performance.service';
+import {
   emitToSector,
   emitToUser,
   emitToTicket,
@@ -261,23 +266,30 @@ export async function assignTicket(user: AuthUser, id: string) {
       throw new AppError('Seu usuário não está vinculado a um setor', 403);
     }
 
-    const claim = await prisma.ticket.updateMany({
-      where: {
-        id,
-        agentId: null,
-        status: 'WAITING',
-        sectorId,
-        requestedAgentId: ticket.requestedAgentId,
-      },
-      data: { agentId: user.id, status: 'IN_PROGRESS' },
+    await prisma.$transaction(async (transaction) => {
+      const claim = await transaction.ticket.updateMany({
+        where: {
+          id,
+          agentId: null,
+          status: 'WAITING',
+          sectorId,
+          requestedAgentId: ticket.requestedAgentId,
+        },
+        data: { agentId: user.id, status: 'IN_PROGRESS' },
+      });
+      if (claim.count === 0) {
+        throw new AppError('Este ticket já foi assumido ou não está mais disponível', 409);
+      }
+      await startAgentTicketSession(transaction, id, user.id);
     });
-    if (claim.count === 0) {
-      throw new AppError('Este ticket já foi assumido ou não está mais disponível', 409);
-    }
   } else {
-    await prisma.ticket.update({
-      where: { id },
-      data: { agentId: user.id, status: 'IN_PROGRESS' },
+    await prisma.$transaction(async (transaction) => {
+      await endAgentTicketSession(transaction, id, ticket.agentId);
+      await transaction.ticket.update({
+        where: { id },
+        data: { agentId: user.id, status: 'IN_PROGRESS' },
+      });
+      await startAgentTicketSession(transaction, id, user.id);
     });
   }
 
@@ -316,7 +328,10 @@ export async function assignTicket(user: AuthUser, id: string) {
 // ATUALIZAR STATUS
 // ==========================
 export async function updateStatus(user: AuthUser, id: string, data: UpdateStatusInput) {
-  const ticket = await prisma.ticket.findUnique({ where: { id } });
+  const ticket = await prisma.ticket.findUnique({
+    where: { id },
+    include: { client: { select: { phone: true } } },
+  });
   if (!ticket) throw new AppError('Ticket não encontrado', 404);
 
   // Permite agent, ADMIN, ou participante
@@ -328,37 +343,47 @@ export async function updateStatus(user: AuthUser, id: string, data: UpdateStatu
     throw new AppError('Sem permissão para alterar este ticket', 403);
   }
 
-  const updated = await prisma.ticket.update({
-    where: { id },
-    data: {
-      status: data.status,
-      closedAt:
-        data.status === 'CLOSED' || data.status === 'RESOLVED'
-          ? new Date()
-          : null,
-    },
-    include: {
-      sector: { select: { id: true, name: true, slug: true } },
-      client: {
-        select: {
-          id: true,
-          name: true,
-          company: true,
-          phone: true,
-          role: true,
-          profilePictureUrl: true,
+  const closed = data.status === 'CLOSED' || data.status === 'RESOLVED';
+  const closedAt = closed ? new Date() : null;
+  const updated = await prisma.$transaction(async (transaction) => {
+    const updatedTicket = await transaction.ticket.update({
+      where: { id },
+      data: { status: data.status, closedAt },
+      include: {
+        sector: { select: { id: true, name: true, slug: true } },
+        client: {
+          select: {
+            id: true,
+            name: true,
+            company: true,
+            phone: true,
+            role: true,
+            profilePictureUrl: true,
+          },
         },
+        agent: { select: { id: true, name: true, email: true, role: true } },
+        requestedAgent: { select: { id: true, name: true, email: true, role: true } },
       },
-      agent: { select: { id: true, name: true, email: true, role: true } },
-      requestedAgent: { select: { id: true, name: true, email: true, role: true } },
-    },
+    });
+    if (closed) {
+      await endAgentTicketSession(transaction, id, ticket.agentId);
+    } else if (ticket.agentId) {
+      await startAgentTicketSession(transaction, id, ticket.agentId);
+    }
+    return updatedTicket;
   });
 
-  if (data.status === 'CLOSED' || data.status === 'RESOLVED') {
+  if (closed) {
     await prisma.conversation.updateMany({
       where: { ticketId: id },
       data: { state: 'CLOSED' },
     });
+    if (closedAt) {
+      await requestTicketRating(
+        { id, agentId: ticket.agentId, channel: ticket.channel, client: ticket.client },
+        closedAt
+      );
+    }
   }
 
   emitToSector(ticket.sectorId, 'ticket:updated', { id: updated.id });

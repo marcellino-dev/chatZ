@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
 import { prepareIncomingClient, processMessage } from '../bot/bot.service';
-import { downloadMediaFromWhatsApp } from './whatsapp.service';
+import { downloadMediaFromWhatsApp, sendWhatsAppMessage } from './whatsapp.service';
 import { refreshWhatsAppProfilePicture } from './profile.service';
+import { captureTicketRating } from '../performance/performance.service';
 
 export async function webhook(req: Request, res: Response) {
   try {
@@ -61,6 +62,14 @@ export async function webhook(req: Request, res: Response) {
 
     if (!content && !attachment) {
       return res.status(200).json({ ok: true, empty: true });
+    }
+
+    if (content) {
+      const ratingReply = await captureTicketRating(phone, content);
+      if (ratingReply) {
+        await sendWhatsAppMessage({ phone, text: ratingReply });
+        return res.status(200).json({ ok: true, rating: true });
+      }
     }
 
     await prepareIncomingClient(phone);

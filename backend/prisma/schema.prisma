@@ -106,11 +106,13 @@ model User {
   transfersSent Transfer[] @relation("TransfersFrom")
   transfersRecv Transfer[] @relation("TransfersTo")
 
-  participatedTickets TicketParticipant[] @relation("TicketParticipants")
-  addedParticipants   TicketParticipant[] @relation("ParticipantAddedBy")
+  participatedTickets TicketParticipant[]  @relation("TicketParticipants")
+  addedParticipants   TicketParticipant[]  @relation("ParticipantAddedBy")
   stickers            Sticker[]
   ticketNotes         TicketNote[]
   followUps           FollowUp[]
+  assignedSessions    AgentTicketSession[] @relation("AgentTicketSessions")
+  receivedRatings     TicketRating[]       @relation("AgentTicketRatings")
 
   @@map("users")
 }
@@ -191,13 +193,15 @@ model Ticket {
   updatedAt DateTime  @updatedAt
   closedAt  DateTime?
 
-  messages     Message[]
-  transfers    Transfer[]
-  conversation Conversation?
-  participants TicketParticipant[]
-  notes        TicketNote[]
-  tags         Tag[]
-  followUps    FollowUp[]
+  messages           Message[]
+  transfers          Transfer[]
+  conversation       Conversation?
+  participants       TicketParticipant[]
+  notes              TicketNote[]
+  tags               Tag[]
+  followUps          FollowUp[]
+  assignmentSessions AgentTicketSession[]
+  rating             TicketRating?
 
   @@map("tickets")
 }
@@ -232,6 +236,35 @@ model FollowUp {
   @@index([creatorId, scheduledAt])
   @@index([ticketId, scheduledAt])
   @@map("follow_ups")
+}
+
+model AgentTicketSession {
+  id         String    @id @default(cuid())
+  ticketId   String
+  ticket     Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  agentId    String
+  agent      User      @relation("AgentTicketSessions", fields: [agentId], references: [id], onDelete: Cascade)
+  assignedAt DateTime  @default(now())
+  endedAt    DateTime?
+
+  @@index([agentId, assignedAt])
+  @@index([ticketId, endedAt])
+  @@map("agent_ticket_sessions")
+}
+
+model TicketRating {
+  id          String    @id @default(cuid())
+  ticketId    String    @unique
+  ticket      Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  agentId     String
+  agent       User      @relation("AgentTicketRatings", fields: [agentId], references: [id], onDelete: Cascade)
+  protocol    String    @unique
+  score       Int?
+  requestedAt DateTime  @default(now())
+  receivedAt  DateTime?
+
+  @@index([agentId, receivedAt])
+  @@map("ticket_ratings")
 }
 
 model Tag {

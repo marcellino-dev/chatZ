@@ -8,6 +8,7 @@ import {
 } from '../../sockets/socket.server';
 import { assertTicketAccess } from '../tickets/ticket.access';
 import { canAssignTicket } from '../tickets/ticket.permissions';
+import { startAgentTicketSession } from '../performance/performance.service';
 import {
   findClientUsersByPhone,
   normalizeBrazilianPhone,
@@ -348,6 +349,7 @@ export async function startConversation(
         });
 
   if (ticket) {
+    const currentTicket = ticket;
     if (ticket.sectorId !== sectorId) {
       throw new AppError('Esse contato já possui atendimento aberto em outro setor', 409);
     }
@@ -374,19 +376,22 @@ export async function startConversation(
         throw new AppError('Seu usuário não está vinculado a um setor', 403);
       }
 
-      const claim = await prisma.ticket.updateMany({
-        where: {
-          id: ticket.id,
-          agentId: null,
-          status: 'WAITING',
-          requestedAgentId: ticket.requestedAgentId,
-          ...(sectorId && { sectorId }),
-        },
-        data: { agentId: user.id, status: 'IN_PROGRESS' },
+      await prisma.$transaction(async (transaction) => {
+        const claim = await transaction.ticket.updateMany({
+          where: {
+            id: currentTicket.id,
+            agentId: null,
+            status: 'WAITING',
+            requestedAgentId: currentTicket.requestedAgentId,
+            ...(sectorId && { sectorId }),
+          },
+          data: { agentId: user.id, status: 'IN_PROGRESS' },
+        });
+        if (claim.count === 0) {
+          throw new AppError('Este atendimento já foi assumido', 409);
+        }
+        await startAgentTicketSession(transaction, currentTicket.id, user.id);
       });
-      if (claim.count === 0) {
-        throw new AppError('Este atendimento já foi assumido', 409);
-      }
 
       ticket = await prisma.ticket.findUniqueOrThrow({
         where: { id: ticket.id },
@@ -430,6 +435,7 @@ export async function startConversation(
         agentId: user.id,
       },
     });
+    await startAgentTicketSession(transaction, newTicket.id, user.id);
 
     await transaction.conversation.upsert({
       where: { phone: contact.normalizedPhone },

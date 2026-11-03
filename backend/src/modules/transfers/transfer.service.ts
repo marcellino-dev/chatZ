@@ -8,6 +8,10 @@ import {
 } from '../../sockets/socket.server';
 import { TransferTicketInput } from './transfer.schemas';
 import { assertTicketAccess } from '../tickets/ticket.access';
+import {
+  endAgentTicketSession,
+  startAgentTicketSession,
+} from '../performance/performance.service';
 
 interface AuthUser {
   id: string;
@@ -72,37 +76,40 @@ export async function transferTicket(
     }
 
     // Cria registro de transferência
-    const transfer = await prisma.transfer.create({
-      data: {
-        ticketId,
-        fromUserId: user.id,
-        toUserId: target.id,
-        reason: data.reason,
-      },
-    });
-
-    // Atualiza ticket
-    const updated = await prisma.ticket.update({
-      where: { id: ticketId },
-      data: {
-        agentId: target.id,
-        status: 'IN_PROGRESS',
-      },
-      include: {
-        sector: { select: { id: true, name: true, slug: true } },
-        client: {
-          select: {
-            id: true,
-            name: true,
-            company: true,
-            phone: true,
-            role: true,
-            profilePictureUrl: true,
-          },
+    const { transfer, updated } = await prisma.$transaction(async (transaction) => {
+      const transfer = await transaction.transfer.create({
+        data: {
+          ticketId,
+          fromUserId: user.id,
+          toUserId: target.id,
+          reason: data.reason,
         },
-        agent: { select: { id: true, name: true, email: true, role: true } },
-        requestedAgent: { select: { id: true, name: true, email: true, role: true } },
-      },
+      });
+      await endAgentTicketSession(transaction, ticketId, ticket.agentId);
+      await startAgentTicketSession(transaction, ticketId, target.id);
+      const updated = await transaction.ticket.update({
+        where: { id: ticketId },
+        data: {
+          agentId: target.id,
+          status: 'IN_PROGRESS',
+        },
+        include: {
+          sector: { select: { id: true, name: true, slug: true } },
+          client: {
+            select: {
+              id: true,
+              name: true,
+              company: true,
+              phone: true,
+              role: true,
+              profilePictureUrl: true,
+            },
+          },
+          agent: { select: { id: true, name: true, email: true, role: true } },
+          requestedAgent: { select: { id: true, name: true, email: true, role: true } },
+        },
+      });
+      return { transfer, updated };
     });
 
     await removeUnauthorizedTicketRoomMembers(ticketId);
@@ -135,39 +142,41 @@ export async function transferTicket(
     }
 
     // Cria registro de transferência
-    const transfer = await prisma.transfer.create({
-      data: {
-        ticketId,
-        fromUserId: user.id,
-        toSectorId: targetSector.id,
-        reason: data.reason,
-      },
-    });
-
-    // Atualiza ticket (volta pra fila do novo setor)
-    const updated = await prisma.ticket.update({
-      where: { id: ticketId },
-      data: {
-        sectorId: targetSector.id,
-        agentId: null,
-        requestedAgentId: null,
-        status: 'WAITING',
-      },
-      include: {
-        sector: { select: { id: true, name: true, slug: true } },
-        client: {
-          select: {
-            id: true,
-            name: true,
-            company: true,
-            phone: true,
-            role: true,
-            profilePictureUrl: true,
-          },
+    const { transfer, updated } = await prisma.$transaction(async (transaction) => {
+      const transfer = await transaction.transfer.create({
+        data: {
+          ticketId,
+          fromUserId: user.id,
+          toSectorId: targetSector.id,
+          reason: data.reason,
         },
-        agent: { select: { id: true, name: true, email: true, role: true } },
-        requestedAgent: { select: { id: true, name: true, email: true, role: true } },
-      },
+      });
+      await endAgentTicketSession(transaction, ticketId, ticket.agentId);
+      const updated = await transaction.ticket.update({
+        where: { id: ticketId },
+        data: {
+          sectorId: targetSector.id,
+          agentId: null,
+          requestedAgentId: null,
+          status: 'WAITING',
+        },
+        include: {
+          sector: { select: { id: true, name: true, slug: true } },
+          client: {
+            select: {
+              id: true,
+              name: true,
+              company: true,
+              phone: true,
+              role: true,
+              profilePictureUrl: true,
+            },
+          },
+          agent: { select: { id: true, name: true, email: true, role: true } },
+          requestedAgent: { select: { id: true, name: true, email: true, role: true } },
+        },
+      });
+      return { transfer, updated };
     });
 
     await removeUnauthorizedTicketRoomMembers(ticketId);
