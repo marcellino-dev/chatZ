@@ -10,7 +10,7 @@ import { AttachmentPreview, type Attachment } from './AttachmentPreview';
 import { SimpleEmojiPicker } from './EmojiPicker';
 import { KnowledgeBaseConsultation } from './KnowledgeBaseConsultation';
 import { ProfileAvatar } from '../ProfileAvatar';
-import type { Ticket, Message, QuickReply, TicketNote } from '../../types';
+import type { Ticket, Message, MessageReadEvent, QuickReply, TicketNote } from '../../types';
 
 interface Props {
   onToggleInfo: () => void;
@@ -51,7 +51,13 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
-  const { messages, fetchMessages, addMessage, clear } = useMessagesStore();
+  const {
+    messages,
+    fetchMessages,
+    addMessage,
+    markMessagesRead,
+    clear,
+  } = useMessagesStore();
   const assignTicket = useTicketsStore((s) => s.assignTicket);
 
   const [ticket, setTicket] = useState<Ticket | null>(null);
@@ -64,6 +70,10 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   const [noteSaving, setNoteSaving] = useState(false);
   const [internalNoteOpen, setInternalNoteOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [readError, setReadError] = useState('');
+  const [isPageVisible, setIsPageVisible] = useState(
+    () => document.visibilityState === 'visible'
+  );
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [assigning, setAssigning] = useState(false);
@@ -89,6 +99,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
 
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTypingRef = useRef(false);
+  const readRequestRef = useRef<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -166,6 +177,44 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   }, [id, fetchMessages, clear]);
 
   useEffect(() => {
+    const updateVisibility = () =>
+      setIsPageVisible(document.visibilityState === 'visible');
+    document.addEventListener('visibilitychange', updateVisibility);
+    return () => document.removeEventListener('visibilitychange', updateVisibility);
+  }, []);
+
+  useEffect(() => {
+    if (
+      !id ||
+      !user ||
+      !isPageVisible ||
+      readRequestRef.current === id
+    ) return;
+    const hasUnreadIncoming = messages.some(
+      (message) =>
+        !message.read &&
+        (user.role === 'CLIENT'
+          ? message.sender.role !== 'CLIENT'
+          : message.sender.role === 'CLIENT')
+    );
+    if (!hasUnreadIncoming) return;
+
+    readRequestRef.current = id;
+    void api
+      .post<{ messageIds: string[] }>(`/tickets/${id}/messages/read`)
+      .then(({ data }) => {
+        markMessagesRead(data.messageIds);
+        setReadError('');
+      })
+      .catch((error: unknown) => {
+        setReadError(getErrorMessage(error));
+      })
+      .finally(() => {
+        if (readRequestRef.current === id) readRequestRef.current = null;
+      });
+  }, [id, isPageVisible, markMessagesRead, messages, user]);
+
+  useEffect(() => {
     if (!id || !user || user.role === 'CLIENT') return;
 
     let active = true;
@@ -214,6 +263,10 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       console.log('📩 [ChatWindow] message:new recebida:', msg);
       if (msg.ticketId !== id) return;
       addMessage(msg);
+    }
+
+    function handleMessagesRead(event: MessageReadEvent) {
+      if (event.ticketId === id) markMessagesRead(event.messageIds);
     }
 
     function handleUpdated(updated: Ticket) {
@@ -293,6 +346,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     }
 
     activeSocket.on('message:new', handleNew);
+    activeSocket.on('messages:read', handleMessagesRead);
     activeSocket.on('ticket:updated', handleUpdated);
     activeSocket.on('typing:update', handleTypingUpdate);
     activeSocket.on('ticket:note-created', handleNoteCreated);
@@ -306,6 +360,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       activeSocket.emit('ticket:leave', id);
       activeSocket.off('connect', join);
       activeSocket.off('message:new', handleNew);
+      activeSocket.off('messages:read', handleMessagesRead);
       activeSocket.off('ticket:updated', handleUpdated);
       activeSocket.off('typing:update', handleTypingUpdate);
       activeSocket.off('ticket:note-created', handleNoteCreated);
@@ -317,7 +372,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
         activeSocket.emit('typing:stop', { ticketId: id });
       }
     };
-  }, [id, addMessage, clear, navigate, user?.id]);
+  }, [id, addMessage, markMessagesRead, clear, navigate, user?.id, user?.role]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -815,11 +870,14 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   ) ?? false;
   const canAssign =
     !ticket.agentId && (user?.role === 'AGENT' || user?.role === 'ADMIN');
-  const canSend = isMine || isParticipant;
   const isTicketOpen =
     ticket.status === 'WAITING' ||
     ticket.status === 'IN_PROGRESS' ||
     ticket.status === 'TRANSFERRED';
+  const canSend =
+    user?.role === 'CLIENT'
+      ? ticket.clientId === user.id && isTicketOpen
+      : isMine || isParticipant;
   const canManageNotes =
     (user?.role === 'ADMIN' || user?.role === 'AGENT') && isTicketOpen;
   const notes =
@@ -1019,6 +1077,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
                       <MessageBubble
                         message={msg}
                         isAgent={isAgentMessage}
+                        isOwn={msg.senderId === user?.id}
                         onFavoriteSticker={
                           user?.role !== 'CLIENT' &&
                           msg.sender.role === 'CLIENT' &&
@@ -1068,6 +1127,11 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       </div>
 
       <footer className="shrink-0 bg-[#f4f5fa]">
+        {readError && (
+          <p role="alert" className="px-4 pt-2 text-center text-xs text-rose-700">
+            Não foi possível confirmar a leitura: {readError}
+          </p>
+        )}
         {canSend ? (
           <>
             {canManageNotes && internalNoteOpen && (
@@ -1471,7 +1535,9 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
         ) : (
           <div className="p-3">
             <p className="text-center text-chatz-text-muted text-sm py-2">
-              {ticket.agentId
+              {user?.role === 'CLIENT'
+                ? 'Este atendimento foi encerrado.'
+                : ticket.agentId
                 ? `Atendimento sendo feito por ${ticket.agent?.name ?? 'outro atendente'}`
                 : 'Clique em "Assumir" para responder este atendimento'}
             </p>
@@ -1638,6 +1704,7 @@ function InternalNote({
 function MessageBubble({
   message,
   isAgent,
+  isOwn,
   onFavoriteSticker,
   stickerSaved,
   favoriteMenuOpen,
@@ -1645,6 +1712,7 @@ function MessageBubble({
 }: {
   message: Message;
   isAgent: boolean;
+  isOwn: boolean;
   onFavoriteSticker?: () => void;
   stickerSaved: boolean;
   favoriteMenuOpen: boolean;
@@ -1658,19 +1726,19 @@ function MessageBubble({
   const timeEl = (
     <span
       className={`flex shrink-0 items-center gap-1 text-[11px] ${
-        isAgent ? 'text-emerald-800/70' : 'text-slate-400'
+        isOwn ? 'text-emerald-800/70' : 'text-slate-400'
       }`}
     >
       {time}
-      {isAgent && <DoubleCheckIcon />}
+      {isOwn && <DoubleCheckIcon read={message.read} />}
     </span>
   );
 
   return (
-    <div className={`flex items-end ${isAgent ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+    <div className={`flex items-end ${isOwn ? 'justify-end' : 'justify-start'} animate-fade-in`}>
       <div
         className={`max-w-[88%] rounded-2xl shadow-sm sm:max-w-[70%] ${
-          isAgent
+          isOwn
             ? 'rounded-br-md bg-[#dcf8d8] text-slate-900 ring-1 ring-emerald-200/60'
             : 'rounded-bl-md bg-white text-slate-900 ring-1 ring-slate-200/60'
         } ${attachment && !hasContent ? 'p-2' : 'px-4 py-2.5'}`}
@@ -1780,8 +1848,25 @@ function SlashIcon() {
 function LockIcon() {
   return (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>);
 }
-function DoubleCheckIcon() {
-  return (<svg width="16" height="12" viewBox="0 0 24 18" fill="none" stroke="#3b82f6" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m1 10 4 4L14 4" /><path d="m10 12 2 2L22 4" /></svg>);
+function DoubleCheckIcon({ read }: { read: boolean }) {
+  return (
+    <svg
+      width="16"
+      height="12"
+      viewBox="0 0 24 18"
+      fill="none"
+      stroke={read ? '#3b82f6' : 'currentColor'}
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      role="img"
+      aria-label={read ? 'Lida' : 'Enviada'}
+    >
+      <title>{read ? 'Lida' : 'Enviada'}</title>
+      <path d="m1 10 4 4L14 4" />
+      <path d="m10 12 2 2L22 4" />
+    </svg>
+  );
 }
 function InternalNoteIcon() {
   return (

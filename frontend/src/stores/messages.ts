@@ -10,6 +10,7 @@ interface MessagesState {
   fetchMessages: (ticketId: string) => Promise<void>;
   sendMessage: (ticketId: string, content: string) => Promise<void>;
   addMessage: (message: Message) => void;
+  markMessagesRead: (messageIds: string[]) => void;
   clear: () => void;
 }
 
@@ -38,6 +39,16 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
   addMessage: (message) => {
     if (get().messages.some((m) => m.id === message.id)) return;
     set({ messages: [...get().messages, message] });
+  },
+
+  markMessagesRead: (messageIds) => {
+    if (messageIds.length === 0) return;
+    const readIds = new Set(messageIds);
+    set((state) => ({
+      messages: state.messages.map((message) =>
+        readIds.has(message.id) ? { ...message, read: true } : message
+      ),
+    }));
   },
 
   clear: () => set({ messages: [], error: null, loading: false }),

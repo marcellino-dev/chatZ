@@ -25,6 +25,7 @@ export const listTicketsSchema = z.object({
 
 export const ticketHistorySchema = z.object({
   q: z.string().trim().max(100).optional(),
+  agentId: z.string().trim().min(1).optional(),
 });
 
 export const addParticipantSchema = z.object({

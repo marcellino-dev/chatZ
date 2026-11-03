@@ -52,8 +52,10 @@ export default function App() {
           <Route element={<ProtectedRoute roles={['ADMIN', 'AGENT']} />}>
             <Route path="/follow-ups" element={<FollowUps />} />
           </Route>
-          <Route element={<ProtectedRoute roles={['AGENT']} />}>
+          <Route element={<ProtectedRoute roles={['ADMIN', 'AGENT']} />}>
             <Route path="/history" element={<History />} />
+          </Route>
+          <Route element={<ProtectedRoute roles={['AGENT']} />}>
             <Route path="/performance" element={<Performance />} />
           </Route>
           <Route element={<ProtectedRoute roles={['ADMIN']} />}>

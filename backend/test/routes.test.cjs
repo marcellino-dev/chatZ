@@ -121,6 +121,7 @@ const routes = [
   ['DELETE', '/tickets/test-ticket/tags/test-tag', 401],
   ['GET', '/tickets/test-ticket/messages', 401],
   ['POST', '/tickets/test-ticket/messages', 401],
+  ['POST', '/tickets/test-ticket/messages/read', 401],
   ['GET', '/tickets/test-ticket/transfers', 401],
   ['POST', '/tickets/test-ticket/transfers', 401],
   ['GET', '/sectors', 401],
@@ -665,6 +666,130 @@ test('health and public webhook endpoints return their documented payloads', asy
   assert.deepEqual(await webhookResponse.json(), { ok: true, ignored: true });
 });
 
+test('message read receipts work for clients and staff without changing reads on GET', async () => {
+  const [incomingToAgent, incomingToClient] = await Promise.all([
+    prisma.message.create({
+      data: {
+        content: 'Mensagem do cliente',
+        ticketId: fixture.ticket.id,
+        senderId: fixture.client.id,
+      },
+    }),
+    prisma.message.create({
+      data: {
+        content: 'Mensagem do atendente',
+        ticketId: fixture.ticket.id,
+        senderId: fixture.owner.id,
+      },
+    }),
+  ]);
+  const ownerHeaders = {
+    authorization: `Bearer ${signToken({ sub: fixture.owner.id, role: 'AGENT' })}`,
+  };
+  const clientHeaders = {
+    authorization: `Bearer ${signToken({ sub: fixture.client.id, role: 'CLIENT' })}`,
+  };
+  const otherAgentHeaders = {
+    authorization: `Bearer ${signToken({ sub: fixture.otherAgent.id, role: 'AGENT' })}`,
+  };
+
+  const staffReadResponse = await fetch(
+    `${baseUrl}/tickets/${fixture.ticket.id}/messages/read`,
+    { method: 'POST', headers: ownerHeaders },
+  );
+  assert.equal(staffReadResponse.status, 200);
+  assert.deepEqual((await staffReadResponse.json()).messageIds, [incomingToAgent.id]);
+  assert.equal(
+    (await prisma.message.findUnique({ where: { id: incomingToAgent.id } })).read,
+    true,
+  );
+  assert.equal(
+    (await prisma.message.findUnique({ where: { id: incomingToClient.id } })).read,
+    false,
+  );
+
+  const clientReadResponse = await fetch(
+    `${baseUrl}/tickets/${fixture.ticket.id}/messages/read`,
+    { method: 'POST', headers: clientHeaders },
+  );
+  assert.equal(clientReadResponse.status, 200);
+  assert.deepEqual((await clientReadResponse.json()).messageIds, [incomingToClient.id]);
+  assert.equal(
+    (await prisma.message.findUnique({ where: { id: incomingToClient.id } })).read,
+    true,
+  );
+
+  const unauthorizedReadResponse = await fetch(
+    `${baseUrl}/tickets/${fixture.ticket.id}/messages/read`,
+    { method: 'POST', headers: otherAgentHeaders },
+  );
+  assert.equal(unauthorizedReadResponse.status, 403);
+
+  const unreadMessage = await prisma.message.create({
+    data: {
+      content: 'Continua não lida até a conversa ser exibida',
+      ticketId: fixture.ticket.id,
+      senderId: fixture.client.id,
+    },
+  });
+  const listResponse = await fetch(
+    `${baseUrl}/tickets/${fixture.ticket.id}/messages`,
+    { headers: ownerHeaders },
+  );
+  assert.equal(listResponse.status, 200);
+  assert.equal(
+    (await prisma.message.findUnique({ where: { id: unreadMessage.id } })).read,
+    false,
+  );
+});
+
+test('contact listing enriches contacts with email, conversations and last interaction', async () => {
+  const phone = '5511987654321';
+  const email = `contact-${process.pid}@test.invalid`;
+  const client = await prisma.user.create({
+    data: { name: 'Cliente de contatos', role: 'CLIENT', phone, email },
+  });
+  const ticket = await prisma.ticket.create({
+    data: {
+      subject: 'Atendimento do contato',
+      status: 'IN_PROGRESS',
+      sectorId: fixture.sector.id,
+      clientId: client.id,
+      agentId: fixture.owner.id,
+      createdAt: new Date('2026-01-01T10:00:00.000Z'),
+    },
+  });
+  const lastInteraction = new Date('2026-02-03T11:30:00.000Z');
+  await prisma.message.create({
+    data: {
+      content: 'Última mensagem',
+      ticketId: ticket.id,
+      senderId: fixture.owner.id,
+      createdAt: lastInteraction,
+    },
+  });
+  await prisma.contact.create({
+    data: {
+      name: 'Contato enriquecido',
+      phone,
+      normalizedPhone: phone,
+    },
+  });
+
+  const response = await fetch(`${baseUrl}/contacts`, {
+    headers: {
+      authorization: `Bearer ${signToken({ sub: fixture.owner.id, role: 'AGENT' })}`,
+    },
+  });
+  assert.equal(response.status, 200);
+  const contacts = await response.json();
+  const contact = contacts.find((item) => item.name === 'Contato enriquecido');
+  assert.ok(contact);
+  assert.equal(contact.email, email);
+  assert.equal(contact.conversationsCount, 1);
+  assert.equal(contact.lastInteractionAt, lastInteraction.toISOString());
+});
+
 test('admins can list all ticket statuses while agents only receive active and waiting tickets', async () => {
   const resolvedTicket = await prisma.ticket.create({
     data: {
@@ -718,7 +843,7 @@ test('admins can list all ticket statuses while agents only receive active and w
   assert.ok(adminTickets.some((ticket) => ticket.id === waitingTicket.id));
 });
 
-test('agents can only search their own resolved and closed tickets in history', async () => {
+test('admins can filter history by agent while agents are restricted to their own tickets', async () => {
   const [ownResolved, ownClosed, otherAgentClosed, activeTicket] =
     await Promise.all([
       prisma.ticket.create({
@@ -806,6 +931,16 @@ test('agents can only search their own resolved and closed tickets in history', 
     [otherAgentClosed.id],
   );
 
+  const agentOverrideResponse = await fetch(
+    `${baseUrl}/tickets/history?q=Hist%C3%B3rico&agentId=${fixture.otherAgent.id}`,
+    { headers: ownerHeaders },
+  );
+  assert.equal(agentOverrideResponse.status, 200);
+  assert.deepEqual(
+    (await agentOverrideResponse.json()).map((ticket) => ticket.id),
+    [ownClosed.id, ownResolved.id],
+  );
+
   const admin = await prisma.user.create({
     data: {
       name: 'Administrador sem histórico pessoal',
@@ -813,12 +948,34 @@ test('agents can only search their own resolved and closed tickets in history', 
       email: `history-admin-${process.pid}@test.invalid`,
     },
   });
-  const adminResponse = await fetch(`${baseUrl}/tickets/history`, {
+  const adminHeaders = {
+    authorization: `Bearer ${signToken({ sub: admin.id, role: 'ADMIN' })}`,
+  };
+  const adminResponse = await fetch(
+    `${baseUrl}/tickets/history?q=Hist%C3%B3rico`,
+    { headers: adminHeaders },
+  );
+  assert.equal(adminResponse.status, 200);
+  assert.deepEqual(
+    (await adminResponse.json()).map((ticket) => ticket.id),
+    [otherAgentClosed.id, ownClosed.id, ownResolved.id],
+  );
+
+  const filteredAdminResponse = await fetch(
+    `${baseUrl}/tickets/history?agentId=${fixture.otherAgent.id}`,
+    { headers: adminHeaders },
+  );
+  assert.equal(filteredAdminResponse.status, 200);
+  const filteredAdminTickets = await filteredAdminResponse.json();
+  assert.ok(filteredAdminTickets.some((ticket) => ticket.id === otherAgentClosed.id));
+  assert.ok(filteredAdminTickets.every((ticket) => ticket.agentId === fixture.otherAgent.id));
+
+  const clientResponse = await fetch(`${baseUrl}/tickets/history`, {
     headers: {
-      authorization: `Bearer ${signToken({ sub: admin.id, role: 'ADMIN' })}`,
+      authorization: `Bearer ${signToken({ sub: fixture.client.id, role: 'CLIENT' })}`,
     },
   });
-  assert.equal(adminResponse.status, 403);
+  assert.equal(clientResponse.status, 403);
   assert.ok(!tickets.some((ticket) => ticket.id === activeTicket.id));
 });
 

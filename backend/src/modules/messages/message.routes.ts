@@ -9,6 +9,9 @@ router.use(authMiddleware);
 // GET /tickets/:ticketId/messages
 router.get('/', messageController.list);
 
+// POST /tickets/:ticketId/messages/read
+router.post('/read', messageController.markRead);
+
 // POST /tickets/:ticketId/messages
 router.post('/', messageController.send);
 

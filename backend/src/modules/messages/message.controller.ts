@@ -19,6 +19,22 @@ export async function list(
   }
 }
 
+export async function markRead(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const result = await messageService.markMessagesRead(
+      req.user!,
+      getRouteParam(req, 'ticketId')
+    );
+    return res.json(result);
+  } catch (err) {
+    return next(err);
+  }
+}
+
 export async function send(
   req: Request,
   res: Response,

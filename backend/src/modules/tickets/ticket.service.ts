@@ -153,14 +153,18 @@ export async function listTicketHistory(
   user: AuthUser,
   query: TicketHistoryQuery
 ) {
-  if (user.role !== 'AGENT') {
-    throw new AppError('Histórico disponível apenas para atendentes', 403);
+  if (user.role !== 'AGENT' && user.role !== 'ADMIN') {
+    throw new AppError('Histórico disponível apenas para a equipe', 403);
   }
 
   const search = query.q?.trim();
   return prisma.ticket.findMany({
     where: {
-      agentId: user.id,
+      ...(user.role === 'AGENT'
+        ? { agentId: user.id }
+        : query.agentId
+          ? { agentId: query.agentId }
+          : {}),
       status: { in: ['RESOLVED', 'CLOSED'] },
       ...(search
         ? {
@@ -168,6 +172,9 @@ export async function listTicketHistory(
               { subject: { contains: search } },
               { client: { name: { contains: search } } },
               { client: { phone: { contains: search } } },
+              ...(user.role === 'ADMIN'
+                ? [{ agent: { name: { contains: search } } }]
+                : []),
             ],
           }
         : {}),

@@ -32,7 +32,7 @@ export async function listMessages(user: AuthUser, ticketId: string) {
 
   await assertTicketAccess(user, ticket);
 
-  const messages = await prisma.message.findMany({
+  return prisma.message.findMany({
     where: { ticketId },
     orderBy: { createdAt: 'asc' },
     include: {
@@ -47,19 +47,55 @@ export async function listMessages(user: AuthUser, ticketId: string) {
       },
     },
   });
+}
 
-  if (user.role !== 'CLIENT') {
-    await prisma.message.updateMany({
-      where: {
-        ticketId,
-        read: false,
-        sender: { role: 'CLIENT' },
-      },
-      data: { read: true },
+export async function markMessagesRead(user: AuthUser, ticketId: string) {
+  const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+  if (!ticket) throw new AppError('Ticket não encontrado', 404);
+
+  await assertTicketAccess(user, ticket);
+  return markUnreadMessagesRead(user, ticketId);
+}
+
+async function markUnreadMessagesRead(user: AuthUser, ticketId: string) {
+  const senderRole =
+    user.role === 'CLIENT'
+      ? { not: 'CLIENT' as const }
+      : ('CLIENT' as const);
+  const unreadMessages = await prisma.message.findMany({
+    where: {
+      ticketId,
+      read: false,
+      sender: { is: { role: senderRole } },
+    },
+    select: { id: true },
+  });
+  const messageIds = unreadMessages.map((message) => message.id);
+
+  if (messageIds.length === 0) return { messageIds };
+
+  const result = await prisma.message.updateMany({
+    where: { id: { in: messageIds }, read: false },
+    data: { read: true },
+  });
+  const updatedIds = result.count === messageIds.length
+    ? messageIds
+    : (
+        await prisma.message.findMany({
+          where: { id: { in: messageIds }, read: true },
+          select: { id: true },
+        })
+      ).map((message) => message.id);
+
+  if (updatedIds.length > 0) {
+    emitToTicket(ticketId, 'messages:read', {
+      ticketId,
+      messageIds: updatedIds,
+      readerId: user.id,
     });
   }
 
-  return messages;
+  return { messageIds: updatedIds };
 }
 
 // ==========================
@@ -92,6 +128,12 @@ export async function sendMessage(
 
   if (user.role === 'CLIENT' && ticket.clientId !== user.id) {
     throw new AppError('Sem permissão', 403);
+  }
+  if (
+    user.role === 'CLIENT' &&
+    !['WAITING', 'IN_PROGRESS', 'TRANSFERRED'].includes(ticket.status)
+  ) {
+    throw new AppError('Este atendimento foi encerrado', 409);
   }
 
   // Permite AGENT se for o agent OU participante

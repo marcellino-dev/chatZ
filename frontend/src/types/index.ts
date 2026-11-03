@@ -42,6 +42,10 @@ export interface Contact {
   createdAt: string;
   updatedAt: string;
   tags?: Tag[];
+
+  email?: string | null;
+  lastInteractionAt?: string | null;
+  conversationsCount?: number | null;
 }
 
 export interface AuthResponse {
@@ -65,6 +69,8 @@ export type TicketStatus =
   | 'CLOSED';
 
 export type TicketPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+
+export type TicketChannel = 'WHATSAPP' | 'WEB' | 'EMAIL';
 
 export interface TicketParticipant {
   id: string;
@@ -90,7 +96,7 @@ export interface Ticket {
   subject: string;
   status: TicketStatus;
   priority: TicketPriority;
-  channel: 'WHATSAPP' | 'WEB';
+  channel: TicketChannel;
   sectorId: string;
   clientId: string;
   requestedAgentId: string | null;
@@ -100,12 +106,16 @@ export interface Ticket {
   closedAt: string | null;
 
   sector: Pick<Sector, 'id' | 'name' | 'slug'>;
+  // `email` ainda é opcional: o backend precisa enviar em /tickets/history.
   client: Pick<
     User,
     'id' | 'name' | 'phone' | 'role' | 'company' | 'profilePictureUrl'
-  >;
-  agent: Pick<User, 'id' | 'name' | 'email' | 'role'> | null;
+  > & { email?: string | null };
+  agent: Pick<User, 'id' | 'name' | 'email' | 'role' | 'profilePictureUrl'> | null;
   requestedAgent: Pick<User, 'id' | 'name' | 'email' | 'role'> | null;
+
+  // Prévia da última mensagem (usada na coluna "Assunto" do histórico).
+  lastMessage?: { content?: string | null } | null;
 
   transfers?: Transfer[];
   participants?: TicketParticipant[];
@@ -177,6 +187,12 @@ export interface Message {
     type: 'image' | 'video' | 'audio' | 'document';
     sticker?: boolean;
   } | null;
+}
+
+export interface MessageReadEvent {
+  ticketId: string;
+  messageIds: string[];
+  readerId: string;
 }
 
 export interface QuickReply {

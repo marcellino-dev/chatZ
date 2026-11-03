@@ -101,7 +101,107 @@ export async function listContacts(query?: string) {
     orderBy: { name: 'asc' },
   });
 
-  return contacts;
+  if (contacts.length === 0) return contacts;
+
+  const clientUsers = await prisma.user.findMany({
+    where: { role: 'CLIENT', phone: { not: null } },
+    select: { id: true, phone: true, email: true },
+  });
+  const usersByPhone = new Map<string, typeof clientUsers>();
+  for (const client of clientUsers) {
+    if (!client.phone) continue;
+    const normalizedPhone = normalizeBrazilianPhone(client.phone);
+    if (!normalizedPhone) continue;
+    const matchingUsers = usersByPhone.get(normalizedPhone) ?? [];
+    matchingUsers.push(client);
+    usersByPhone.set(normalizedPhone, matchingUsers);
+  }
+
+  const clientIds = new Set<string>();
+  const emailByContactId = new Map<string, string>();
+  for (const contact of contacts) {
+    const normalizedPhone = normalizeBrazilianPhone(contact.phone);
+    if (!normalizedPhone) continue;
+    for (const client of usersByPhone.get(normalizedPhone) ?? []) {
+      clientIds.add(client.id);
+      if (client.email && !emailByContactId.has(contact.id)) {
+        emailByContactId.set(contact.id, client.email);
+      }
+    }
+  }
+
+  const tickets = clientIds.size
+    ? await prisma.ticket.findMany({
+        where: { clientId: { in: [...clientIds] } },
+        select: {
+          clientId: true,
+          createdAt: true,
+          messages: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: { createdAt: true },
+          },
+        },
+      })
+    : [];
+  const summaryByClientId = new Map<
+    string,
+    { conversationsCount: number; lastInteractionAt: Date | null }
+  >();
+
+  for (const ticket of tickets) {
+    const summary = summaryByClientId.get(ticket.clientId) ?? {
+      conversationsCount: 0,
+      lastInteractionAt: null,
+    };
+    const lastInteractionAt = ticket.messages[0]?.createdAt ?? ticket.createdAt;
+    summary.conversationsCount += 1;
+    if (
+      !summary.lastInteractionAt ||
+      lastInteractionAt > summary.lastInteractionAt
+    ) {
+      summary.lastInteractionAt = lastInteractionAt;
+    }
+    summaryByClientId.set(ticket.clientId, summary);
+  }
+
+  const clientIdsByContactId = new Map<string, string[]>();
+  for (const contact of contacts) {
+    const normalizedPhone = normalizeBrazilianPhone(contact.phone);
+    clientIdsByContactId.set(
+      contact.id,
+      normalizedPhone
+        ? (usersByPhone.get(normalizedPhone) ?? []).map((client) => client.id)
+        : []
+    );
+  }
+
+  return contacts.map((contact) => {
+    const summaries = (clientIdsByContactId.get(contact.id) ?? [])
+      .map((clientId) => summaryByClientId.get(clientId))
+      .filter(
+        (summary): summary is NonNullable<typeof summary> => summary !== undefined
+      );
+    const conversationsCount = summaries.reduce(
+      (total, summary) => total + summary.conversationsCount,
+      0
+    );
+    const lastInteractionAt = summaries.reduce<Date | null>(
+      (latest, summary) =>
+        summary.lastInteractionAt &&
+        (!latest || summary.lastInteractionAt > latest)
+          ? summary.lastInteractionAt
+          : latest,
+      null
+    );
+
+    return {
+      ...contact,
+      email: emailByContactId.get(contact.id) ?? null,
+      conversationsCount,
+      lastInteractionAt,
+    };
+  });
 }
 
 export async function getContactById(id: string) {

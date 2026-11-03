@@ -56,12 +56,12 @@ export function IconBar() {
       icon: <FollowUpIcon />,
       badge: overdueFollowUps,
     });
+    items.push({
+      to: '/history',
+      label: 'Histórico',
+      icon: <HistoryIcon />,
+    });
     if (user.role === 'AGENT') {
-      items.push({
-        to: '/history',
-        label: 'Histórico',
-        icon: <HistoryIcon />,
-      });
       items.push({
         to: '/performance',
         label: 'Desempenho',
