@@ -5,6 +5,7 @@ import {
   updateStatusSchema,
   updatePrioritySchema,
   listTicketsSchema,
+  ticketHistorySchema,
   addParticipantSchema,
   ticketNoteSchema,
   ticketTagSchema,
@@ -27,6 +28,19 @@ export async function list(req: Request, res: Response, next: NextFunction) {
     const query = listTicketsSchema.parse(req.query);
     const tickets = await ticketService.listTickets(req.user!, query);
     return res.json(tickets);
+  } catch (err) {
+    return next(err);
+  }
+}
+
+export async function listHistory(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const query = ticketHistorySchema.parse(req.query);
+    return res.json(await ticketService.listTicketHistory(req.user!, query));
   } catch (err) {
     return next(err);
   }

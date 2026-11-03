@@ -23,6 +23,10 @@ export const listTicketsSchema = z.object({
   mine: z.coerce.boolean().optional(),
 });
 
+export const ticketHistorySchema = z.object({
+  q: z.string().trim().max(100).optional(),
+});
+
 export const addParticipantSchema = z.object({
   userId: z.string().min(1, 'Usuário obrigatório'),
 });
@@ -43,5 +47,6 @@ export type CreateTicketInput = z.infer<typeof createTicketSchema>;
 export type UpdateStatusInput = z.infer<typeof updateStatusSchema>;
 export type UpdatePriorityInput = z.infer<typeof updatePrioritySchema>;
 export type ListTicketsQuery = z.infer<typeof listTicketsSchema>;
+export type TicketHistoryQuery = z.infer<typeof ticketHistorySchema>;
 export type AddParticipantInput = z.infer<typeof addParticipantSchema>;
 export type TicketNoteInput = z.infer<typeof ticketNoteSchema>;

@@ -103,6 +103,7 @@ const routes = [
   ['DELETE', '/auth/users/test-user', 401],
   ['POST', '/tickets', 401],
   ['GET', '/tickets', 401],
+  ['GET', '/tickets/history', 401],
   ['GET', '/tickets/test-ticket', 401],
   ['PATCH', '/tickets/test-ticket/assign', 401],
   ['PATCH', '/tickets/test-ticket/status', 401],
@@ -138,6 +139,12 @@ const routes = [
   ['GET', '/quick-replies', 401],
   ['GET', '/stickers', 401],
   ['GET', '/tags', 401],
+  ['GET', '/follow-ups/mine', 401],
+  ['GET', '/follow-ups/mine/overdue-count', 401],
+  ['POST', '/follow-ups', 401],
+  ['PATCH', '/follow-ups/test-follow-up', 401],
+  ['POST', '/follow-ups/test-follow-up/complete', 401],
+  ['POST', '/follow-ups/test-follow-up/cancel', 401],
   ['POST', '/stickers/from-message', 401],
   ['POST', '/quick-replies', 401],
   ['PATCH', '/quick-replies/test-reply', 401],
@@ -325,6 +332,110 @@ test('admins can list all ticket statuses while agents only receive active and w
   const adminTickets = await adminResponse.json();
   assert.ok(adminTickets.some((ticket) => ticket.id === resolvedTicket.id));
   assert.ok(adminTickets.some((ticket) => ticket.id === waitingTicket.id));
+});
+
+test('agents can only search their own resolved and closed tickets in history', async () => {
+  const [ownResolved, ownClosed, otherAgentClosed, activeTicket] =
+    await Promise.all([
+      prisma.ticket.create({
+        data: {
+          subject: 'Histórico proposta aprovada',
+          status: 'RESOLVED',
+          closedAt: new Date('2026-10-25T12:00:00.000Z'),
+          sectorId: fixture.sector.id,
+          clientId: fixture.client.id,
+          agentId: fixture.owner.id,
+        },
+      }),
+      prisma.ticket.create({
+        data: {
+          subject: 'Histórico retorno financeiro',
+          status: 'CLOSED',
+          closedAt: new Date('2026-10-26T12:00:00.000Z'),
+          sectorId: fixture.sector.id,
+          clientId: fixture.client.id,
+          agentId: fixture.owner.id,
+        },
+      }),
+      prisma.ticket.create({
+        data: {
+          subject: 'Histórico de outro atendente',
+          status: 'CLOSED',
+          closedAt: new Date('2026-10-27T12:00:00.000Z'),
+          sectorId: fixture.sector.id,
+          clientId: fixture.client.id,
+          agentId: fixture.otherAgent.id,
+        },
+      }),
+      prisma.ticket.create({
+        data: {
+          subject: 'Atendimento ainda ativo',
+          status: 'IN_PROGRESS',
+          sectorId: fixture.sector.id,
+          clientId: fixture.client.id,
+          agentId: fixture.owner.id,
+        },
+      }),
+    ]);
+  const ownerHeaders = {
+    authorization: `Bearer ${signToken({
+      sub: fixture.owner.id,
+      role: 'AGENT',
+    })}`,
+  };
+  const otherAgentHeaders = {
+    authorization: `Bearer ${signToken({
+      sub: fixture.otherAgent.id,
+      role: 'AGENT',
+    })}`,
+  };
+  const allResponse = await fetch(`${baseUrl}/tickets/history?q=Hist%C3%B3rico`, {
+    headers: ownerHeaders,
+  });
+  assert.equal(allResponse.status, 200);
+  const tickets = await allResponse.json();
+  assert.deepEqual(
+    tickets.map((ticket) => ticket.id),
+    [ownClosed.id, ownResolved.id],
+  );
+  assert.ok(tickets.every((ticket) => ['RESOLVED', 'CLOSED'].includes(ticket.status)));
+
+  const searchResponse = await fetch(
+    `${baseUrl}/tickets/history?q=proposta`,
+    { headers: ownerHeaders },
+  );
+  assert.equal(searchResponse.status, 200);
+  assert.deepEqual(
+    (await searchResponse.json()).map((ticket) => ticket.id),
+    [ownResolved.id],
+  );
+
+  const otherAgentResponse = await fetch(
+    `${baseUrl}/tickets/history?q=Hist%C3%B3rico`,
+    {
+    headers: otherAgentHeaders,
+    },
+  );
+  assert.equal(otherAgentResponse.status, 200);
+  assert.deepEqual(
+    (await otherAgentResponse.json()).map((ticket) => ticket.id),
+    [otherAgentClosed.id],
+  );
+
+  const admin = await prisma.user.create({
+    data: {
+      name: 'Administrador sem histórico pessoal',
+      role: 'ADMIN',
+      email: `history-admin-${process.pid}@test.invalid`,
+    },
+  });
+  const adminResponse = await fetch(`${baseUrl}/tickets/history`, {
+    headers: {
+      authorization: `Bearer ${signToken({ sub: admin.id, role: 'ADMIN' })}`,
+    },
+  });
+  assert.equal(adminResponse.status, 403);
+  assert.ok(!tickets.some((ticket) => ticket.id === activeTicket.id));
 });
 
 test('agents only see and claim waiting tickets in their sector or addressed to them', async () => {
@@ -794,6 +905,164 @@ test('shared tags can be applied independently to tickets and persistent contact
   );
   assert.equal(removeContactTagResponse.status, 200);
   assert.deepEqual((await removeContactTagResponse.json()).tags, []);
+});
+
+test('follow-ups are private to their creator and remain manageable after ticket transfer', async () => {
+  const ownerHeaders = {
+    authorization: `Bearer ${signToken({
+      sub: fixture.owner.id,
+      role: 'AGENT',
+    })}`,
+    'content-type': 'application/json',
+  };
+  const colleagueHeaders = {
+    authorization: `Bearer ${signToken({
+      sub: fixture.otherAgent.id,
+      role: 'AGENT',
+    })}`,
+    'content-type': 'application/json',
+  };
+  const ticket = await prisma.ticket.create({
+    data: {
+      subject: 'Conversa com follow-up',
+      status: 'IN_PROGRESS',
+      sectorId: fixture.sector.id,
+      clientId: fixture.client.id,
+      agentId: fixture.owner.id,
+    },
+  });
+  const scheduledAt = new Date(Date.now() + 60 * 60 * 1000);
+  const createResponse = await fetch(`${baseUrl}/follow-ups`, {
+    method: 'POST',
+    headers: ownerHeaders,
+    body: JSON.stringify({
+      ticketId: ticket.id,
+      scheduledAt: scheduledAt.toISOString(),
+      note: 'Confirmar se recebeu a proposta',
+    }),
+  });
+  assert.equal(createResponse.status, 201);
+  const followUp = await createResponse.json();
+  assert.equal(followUp.creatorId, fixture.owner.id);
+  assert.equal(followUp.ticket.subject, ticket.subject);
+  assert.equal(followUp.note, 'Confirmar se recebeu a proposta');
+
+  const deniedCreate = await fetch(`${baseUrl}/follow-ups`, {
+    method: 'POST',
+    headers: colleagueHeaders,
+    body: JSON.stringify({
+      ticketId: ticket.id,
+      scheduledAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    }),
+  });
+  assert.equal(deniedCreate.status, 403);
+
+  const pastDateResponse = await fetch(`${baseUrl}/follow-ups`, {
+    method: 'POST',
+    headers: ownerHeaders,
+    body: JSON.stringify({
+      ticketId: ticket.id,
+      scheduledAt: new Date(Date.now() - 60 * 1000).toISOString(),
+    }),
+  });
+  assert.equal(pastDateResponse.status, 400);
+
+  const inaccessibleUpdate = await fetch(
+    `${baseUrl}/follow-ups/${followUp.id}`,
+    {
+      method: 'PATCH',
+      headers: colleagueHeaders,
+      body: JSON.stringify({ note: 'Edição não autorizada' }),
+    },
+  );
+  assert.equal(inaccessibleUpdate.status, 403);
+  const inaccessibleComplete = await fetch(
+    `${baseUrl}/follow-ups/${followUp.id}/complete`,
+    { method: 'POST', headers: colleagueHeaders },
+  );
+  assert.equal(inaccessibleComplete.status, 403);
+
+  const overdueFollowUp = await prisma.followUp.create({
+    data: {
+      ticketId: ticket.id,
+      creatorId: fixture.owner.id,
+      scheduledAt: new Date(Date.now() - 60 * 1000),
+      note: 'Follow-up vencido',
+    },
+  });
+  const overdueCountResponse = await fetch(
+    `${baseUrl}/follow-ups/mine/overdue-count`,
+    { headers: ownerHeaders },
+  );
+  assert.deepEqual(await overdueCountResponse.json(), { count: 1 });
+  const colleagueOverdueCountResponse = await fetch(
+    `${baseUrl}/follow-ups/mine/overdue-count`,
+    { headers: colleagueHeaders },
+  );
+  assert.deepEqual(await colleagueOverdueCountResponse.json(), { count: 0 });
+
+  const transferResponse = await fetch(
+    `${baseUrl}/tickets/${ticket.id}/transfers`,
+    {
+      method: 'POST',
+      headers: ownerHeaders,
+      body: JSON.stringify({ toUserId: fixture.otherAgent.id }),
+    },
+  );
+  assert.equal(transferResponse.status, 200);
+
+  const ownerListResponse = await fetch(
+    `${baseUrl}/follow-ups/mine?ticketId=${ticket.id}`,
+    { headers: ownerHeaders },
+  );
+  assert.equal(ownerListResponse.status, 200);
+  const ownerFollowUps = await ownerListResponse.json();
+  assert.equal(ownerFollowUps.length, 2);
+  assert.ok(ownerFollowUps.every((item) => item.ticket.canOpen === false));
+  const colleagueListResponse = await fetch(
+    `${baseUrl}/follow-ups/mine?ticketId=${ticket.id}`,
+    { headers: colleagueHeaders },
+  );
+  assert.deepEqual(await colleagueListResponse.json(), []);
+
+  const rescheduleResponse = await fetch(
+    `${baseUrl}/follow-ups/${followUp.id}`,
+    {
+      method: 'PATCH',
+      headers: ownerHeaders,
+      body: JSON.stringify({
+        scheduledAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+      }),
+    },
+  );
+  assert.equal(rescheduleResponse.status, 200);
+
+  const completeResponse = await fetch(
+    `${baseUrl}/follow-ups/${overdueFollowUp.id}/complete`,
+    { method: 'POST', headers: ownerHeaders },
+  );
+  assert.equal(completeResponse.status, 200);
+  assert.ok((await completeResponse.json()).completedAt);
+  const completedCountResponse = await fetch(
+    `${baseUrl}/follow-ups/mine/overdue-count`,
+    { headers: ownerHeaders },
+  );
+  assert.deepEqual(await completedCountResponse.json(), { count: 0 });
+
+  const cancelResponse = await fetch(
+    `${baseUrl}/follow-ups/${followUp.id}/cancel`,
+    { method: 'POST', headers: ownerHeaders },
+  );
+  assert.equal(cancelResponse.status, 200);
+  assert.ok((await cancelResponse.json()).cancelledAt);
+  const historyResponse = await fetch(
+    `${baseUrl}/follow-ups/mine?includeClosed=true`,
+    { headers: ownerHeaders },
+  );
+  const history = await historyResponse.json();
+  assert.equal(history.length, 2);
+  assert.ok(history.some((item) => item.completedAt));
+  assert.ok(history.some((item) => item.cancelledAt));
 });
 
 test('malformed JSON is reported as a client error', async () => {

@@ -110,6 +110,7 @@ model User {
   addedParticipants   TicketParticipant[] @relation("ParticipantAddedBy")
   stickers            Sticker[]
   ticketNotes         TicketNote[]
+  followUps           FollowUp[]
 
   @@map("users")
 }
@@ -196,6 +197,7 @@ model Ticket {
   participants TicketParticipant[]
   notes        TicketNote[]
   tags         Tag[]
+  followUps    FollowUp[]
 
   @@map("tickets")
 }
@@ -212,6 +214,24 @@ model TicketNote {
 
   @@index([ticketId, createdAt])
   @@map("ticket_notes")
+}
+
+model FollowUp {
+  id          String    @id @default(cuid())
+  ticketId    String
+  ticket      Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  creatorId   String
+  creator     User      @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  scheduledAt DateTime
+  note        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+  cancelledAt DateTime?
+
+  @@index([creatorId, scheduledAt])
+  @@index([ticketId, scheduledAt])
+  @@map("follow_ups")
 }
 
 model Tag {

@@ -1,13 +1,15 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthStore } from '../../stores/auth';
 import { ProfileAvatar } from '../ProfileAvatar';
+import { api } from '../../lib/api';
 import type { AgentStatus } from '../../types';
 
 interface NavItem {
   to: string;
   label: string;
   icon: React.ReactNode;
+  badge?: number;
 }
 
 export function IconBar() {
@@ -15,6 +17,31 @@ export function IconBar() {
   const { user, logout, updateStatus } = useAuthStore();
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState('');
+  const [overdueFollowUps, setOverdueFollowUps] = useState(0);
+
+  useEffect(() => {
+    if (!user || (user.role !== 'ADMIN' && user.role !== 'AGENT')) return;
+    let active = true;
+    async function loadOverdueCount() {
+      try {
+        const { data } = await api.get<{ count: number }>(
+          '/follow-ups/mine/overdue-count'
+        );
+        if (active) setOverdueFollowUps(data.count);
+      } catch (error) {
+        if (active) {
+          console.error('Não foi possível carregar os follow-ups vencidos:', error);
+        }
+      }
+    }
+
+    void loadOverdueCount();
+    const interval = window.setInterval(() => void loadOverdueCount(), 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [user]);
 
   if (!user) return null;
 
@@ -23,6 +50,19 @@ export function IconBar() {
   ];
 
   if (user.role === 'ADMIN' || user.role === 'AGENT') {
+    items.push({
+      to: '/follow-ups',
+      label: 'Follow-ups',
+      icon: <FollowUpIcon />,
+      badge: overdueFollowUps,
+    });
+    if (user.role === 'AGENT') {
+      items.push({
+        to: '/history',
+        label: 'Histórico',
+        icon: <HistoryIcon />,
+      });
+    }
     items.push(
       { to: '/contacts', label: 'Contatos', icon: <ContactsIcon /> },
       { to: '/quick-replies', label: 'Respostas prontas', icon: <QuickReplyIcon /> }
@@ -109,7 +149,18 @@ export function IconBar() {
                }`
             }
           >
-            <span className="shrink-0">{item.icon}</span>
+            <span className="relative shrink-0">
+              {item.icon}
+              {item.badge ? (
+                <span
+                  aria-label={`${item.badge} follow-ups vencidos`}
+                  className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center
+                             rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white"
+                >
+                  {item.badge > 99 ? '99+' : item.badge}
+                </span>
+              ) : null}
+            </span>
             <span className="hidden min-w-0 flex-1 truncate lg:block">{item.label}</span>
           </NavLink>
         ))}
@@ -200,6 +251,24 @@ function QuickReplyIcon() {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z" />
       <path d="m9 12 2 2 4-4" />
+    </svg>
+  );
+}
+
+function FollowUpIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function HistoryIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 12a9 9 0 1 0 2.64-6.36L3 8" />
+      <path d="M3 3v5h5M12 7v5l3 2" />
     </svg>
   );
 }

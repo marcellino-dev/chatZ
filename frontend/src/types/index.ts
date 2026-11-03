@@ -130,6 +130,26 @@ export interface TicketNote {
   author: Pick<User, 'id' | 'name' | 'role'>;
 }
 
+export interface FollowUp {
+  id: string;
+  ticketId: string;
+  creatorId: string;
+  scheduledAt: string;
+  note: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  ticket: {
+    id: string;
+    subject: string;
+    status: TicketStatus;
+    clientName: string;
+    agentName: string | null;
+    canOpen: boolean;
+  };
+}
+
 // ==========================
 // MENSAGENS
 // ==========================

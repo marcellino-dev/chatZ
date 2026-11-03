@@ -5,6 +5,7 @@ import {
   ListTicketsQuery,
   UpdatePriorityInput,
   UpdateStatusInput,
+  TicketHistoryQuery,
 } from './ticket.schemas';
 import {
   canAssignTicket,
@@ -141,6 +142,55 @@ export async function listTickets(user: AuthUser, query: ListTicketsQuery) {
   });
 
   return tickets;
+}
+
+export async function listTicketHistory(
+  user: AuthUser,
+  query: TicketHistoryQuery
+) {
+  if (user.role !== 'AGENT') {
+    throw new AppError('Histórico disponível apenas para atendentes', 403);
+  }
+
+  const search = query.q?.trim();
+  return prisma.ticket.findMany({
+    where: {
+      agentId: user.id,
+      status: { in: ['RESOLVED', 'CLOSED'] },
+      ...(search
+        ? {
+            OR: [
+              { subject: { contains: search } },
+              { client: { name: { contains: search } } },
+              { client: { phone: { contains: search } } },
+            ],
+          }
+        : {}),
+    },
+    orderBy: [{ closedAt: 'desc' }, { updatedAt: 'desc' }],
+    include: {
+      sector: { select: { id: true, name: true, slug: true } },
+      client: {
+        select: {
+          id: true,
+          name: true,
+          company: true,
+          phone: true,
+          role: true,
+          profilePictureUrl: true,
+        },
+      },
+      agent: { select: { id: true, name: true, email: true, role: true } },
+      requestedAgent: { select: { id: true, name: true, email: true, role: true } },
+      participants: {
+        include: {
+          user: { select: { id: true, name: true, email: true, role: true } },
+        },
+      },
+      _count: { select: { messages: true } },
+      tags: { select: { id: true, name: true } },
+    },
+  });
 }
 
 // ==========================

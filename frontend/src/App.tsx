@@ -7,6 +7,8 @@ import { Sectors } from './pages/Sectors';
 import { Users } from './pages/Users';
 import { Contacts } from './pages/Contacts';
 import { QuickReplies } from './pages/QuickReplies';
+import { FollowUps } from './pages/FollowUps';
+import { History } from './pages/History';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { GlobalNotifications } from './components/GlobalNotifications';
 import { useAuthStore } from './stores/auth';
@@ -42,6 +44,12 @@ export default function App() {
           <Route path="/settings" element={<Settings />} />
           <Route path="/contacts" element={<Contacts />} />
           <Route path="/quick-replies" element={<QuickReplies />} />
+          <Route element={<ProtectedRoute roles={['ADMIN', 'AGENT']} />}>
+            <Route path="/follow-ups" element={<FollowUps />} />
+          </Route>
+          <Route element={<ProtectedRoute roles={['AGENT']} />}>
+            <Route path="/history" element={<History />} />
+          </Route>
           <Route element={<ProtectedRoute roles={['ADMIN']} />}>
             <Route path="/sectors" element={<Sectors />} />
             <Route path="/users" element={<Users />} />

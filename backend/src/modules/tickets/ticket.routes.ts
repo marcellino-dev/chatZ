@@ -11,6 +11,7 @@ router.use(authMiddleware);
 // Tickets
 router.post('/', ticketController.create);
 router.get('/', ticketController.list);
+router.get('/history', requireRole('AGENT'), ticketController.listHistory);
 router.get('/:id', ticketController.getById);
 router.patch('/:id/assign', ticketController.assign);
 router.patch('/:id/status', ticketController.updateStatus);

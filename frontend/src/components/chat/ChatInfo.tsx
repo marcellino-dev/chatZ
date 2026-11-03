@@ -7,6 +7,7 @@ import { useAuthStore } from '../../stores/auth';
 import { ProfileAvatar } from '../ProfileAvatar';
 import { TransferModal } from './TransferModal';
 import { AddParticipantModal } from './AddParticipantModal';
+import { FollowUpForm } from './FollowUpForm';
 import type { Contact, Tag, Ticket } from '../../types';
 
 interface Props {
@@ -233,6 +234,9 @@ export function ChatInfo({ onClose }: Props) {
 
         {user?.role !== 'CLIENT' && (
           <>
+            <Section title="Follow-up">
+              <FollowUpForm ticketId={ticket.id} />
+            </Section>
             <Section title="Etiquetas da conversa">
               {tagError && (
                 <p role="alert" className="mb-2 text-xs text-chatz-danger">
