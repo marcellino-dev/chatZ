@@ -4,6 +4,8 @@ import {
   loginSchema,
   createUserSchema,
   updateStatusSchema,
+  changePasswordSchema,
+  updatePreferencesSchema,
 } from './auth.schemas';
 import { getRouteParam } from '../../utils/routeParams';
 import { saveUploadedFile } from '../uploads/upload.service';
@@ -50,6 +52,32 @@ export async function updateStatus(
     const data = updateStatusSchema.parse(req.body);
     const user = await authService.updateStatus(req.user!.id, data.status);
     return res.json(user);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function changePassword(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const data = changePasswordSchema.parse(req.body);
+    return res.json(await authService.changePassword(req.user!.id, data));
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function updatePreferences(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const data = updatePreferencesSchema.parse(req.body);
+    return res.json(await authService.updatePreferences(req.user!.id, data));
   } catch (error) {
     return next(error);
   }

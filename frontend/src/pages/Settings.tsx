@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent } from 'react';
+import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../stores/settings';
 import { useAuthStore } from '../stores/auth';
@@ -47,25 +47,27 @@ export function Settings() {
     <div className="flex h-screen w-screen overflow-hidden bg-chatz-bg">
       <IconBar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center gap-4 border-b border-chatz-border bg-chatz-surface px-6 py-4">
+        <header className="relative flex shrink-0 items-center gap-4 overflow-hidden border-b border-chatz-border bg-white px-4 py-4 sm:px-6">
+          <div aria-hidden="true" className="pointer-events-none absolute -right-10 -top-20 h-40 w-40 rounded-full bg-[radial-gradient(circle,rgba(249,115,22,0.12),rgba(59,130,246,0.06)_48%,transparent_72%)]" />
           <PageBackButton />
-          <div>
-            <h1 className="text-xl font-display font-extrabold text-chatz-text">Configurações</h1>
-            <p className="text-xs text-chatz-text-muted">chatZ — {user.name}</p>
+          <div className="relative">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-chatz-primary">Preferências pessoais</p>
+            <h1 className="font-display text-xl font-extrabold text-chatz-text sm:text-2xl">Configurações</h1>
+            <p className="text-xs text-chatz-text-muted">{user.name}</p>
           </div>
         </header>
 
-        <div className="flex min-h-0 flex-1 overflow-hidden">
-        <aside className="w-[340px] bg-chatz-surface border-r border-chatz-border overflow-y-auto shrink-0">
-          <nav className="py-2">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
+        <aside className="w-full shrink-0 overflow-x-auto border-b border-chatz-border bg-white md:w-72 md:overflow-y-auto md:overflow-x-hidden md:border-b-0 md:border-r">
+          <nav className="flex flex-row py-2 md:flex-col md:py-3">
             {SECTIONS.map((s) => (
               <button
                 key={s.key}
                 onClick={() => setSection(s.key)}
-                className={`w-full text-left px-6 py-3 flex items-start gap-3 transition-all ${
+                className={`flex min-w-[145px] items-start gap-3 border-b-2 px-4 py-2.5 text-left transition-all md:w-full md:min-w-0 md:border-b-0 md:border-l-4 md:px-5 md:py-3 ${
                   section === s.key
-                    ? 'bg-chatz-primary-light border-l-4 border-l-chatz-primary'
-                    : 'border-l-4 border-l-transparent hover:bg-chatz-surface-hover'
+                    ? 'border-b-chatz-primary bg-chatz-primary-light md:border-b-transparent md:border-l-chatz-primary'
+                    : 'border-b-transparent hover:bg-chatz-surface-hover md:border-l-transparent'
                 }`}
               >
                 <span className={section === s.key ? 'text-chatz-primary' : 'text-chatz-text-muted'}>
@@ -82,8 +84,8 @@ export function Settings() {
           </nav>
         </aside>
 
-        <main className="flex-1 overflow-y-auto">
-          <div className="max-w-2xl mx-auto p-8">
+        <main className="min-w-0 flex-1 overflow-y-auto bg-chatz-bg">
+          <div className="mx-auto max-w-3xl p-4 sm:p-8">
             {section === 'profile' && <ProfileSection user={user} />}
             {section === 'account' && <AccountSection />}
             {section === 'privacy' && <PrivacySection />}
@@ -217,13 +219,63 @@ function ProfileSection({ user }: { user: User }) {
 }
 
 function AccountSection() {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage('');
+    setError('');
+    if (newPassword !== confirmPassword) {
+      setError('A confirmação da nova senha não corresponde.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const { data } = await api.put<{ message: string }>('/auth/me/password', {
+        currentPassword,
+        newPassword,
+      });
+      setMessage(data.message);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (requestError) {
+      setError(getErrorMessage(requestError));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div>
       <SectionTitle icon="🔒" title="Conta" description="Segurança e dados da conta" />
       <Card>
-        <p className="text-sm text-chatz-text-muted">
-          Funcionalidade em desenvolvimento. Em breve você poderá alterar sua senha, ativar 2FA e ver histórico de login.
-        </p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label htmlFor="current-password" className="mb-1 block text-sm font-medium text-chatz-text">Senha atual</label>
+            <input id="current-password" type="password" autoComplete="current-password" required value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} className="w-full rounded-chatz border border-chatz-border bg-chatz-surface px-3 py-2 text-sm text-chatz-text" />
+          </div>
+          <div>
+            <label htmlFor="new-password" className="mb-1 block text-sm font-medium text-chatz-text">Nova senha</label>
+            <input id="new-password" type="password" autoComplete="new-password" minLength={8} maxLength={128} required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} className="w-full rounded-chatz border border-chatz-border bg-chatz-surface px-3 py-2 text-sm text-chatz-text" />
+            <p className="mt-1 text-xs text-chatz-text-muted">Use pelo menos 8 caracteres.</p>
+          </div>
+          <div>
+            <label htmlFor="confirm-password" className="mb-1 block text-sm font-medium text-chatz-text">Confirme a nova senha</label>
+            <input id="confirm-password" type="password" autoComplete="new-password" minLength={8} maxLength={128} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="w-full rounded-chatz border border-chatz-border bg-chatz-surface px-3 py-2 text-sm text-chatz-text" />
+          </div>
+          {error && <p role="alert" className="text-sm text-chatz-danger">{error}</p>}
+          {message && <p role="status" className="text-sm text-green-700">{message}</p>}
+          <button type="submit" disabled={saving} className="rounded-chatz bg-chatz-primary px-4 py-2 text-sm font-semibold text-white hover:bg-chatz-primary-hover disabled:opacity-50">
+            {saving ? 'Salvando...' : 'Alterar senha'}
+          </button>
+        </form>
       </Card>
     </div>
   );
@@ -263,12 +315,37 @@ function NotificationsSection({
   permission: NotificationPermission;
   onRequestPermission: () => void;
 }) {
+  const user = useAuthStore((state) => state.user);
+  const setUser = useAuthStore((state) => state.setUser);
+  const setAccountPreferences = useSettingsStore((state) => state.setAccountPreferences);
+  const [savingPreferences, setSavingPreferences] = useState(false);
+  const [preferencesError, setPreferencesError] = useState('');
   const {
     notificationsEnabled, messageNotifications, ticketNotifications,
     soundEnabled, soundType, showPreview,
-    setNotificationsEnabled, setMessageNotifications, setTicketNotifications,
-    setSoundEnabled, setSoundType, setShowPreview,
+    setMessageNotifications, setTicketNotifications, setShowPreview,
   } = useSettingsStore();
+
+  async function saveAccountPreferences(
+    preferences: Partial<Pick<User, 'soundEnabled' | 'desktopNotifications' | 'notificationSound'>>
+  ) {
+    if (!user || savingPreferences) return;
+    setSavingPreferences(true);
+    setPreferencesError('');
+    try {
+      const { data } = await api.patch<User>('/auth/me/preferences', preferences);
+      setUser(data);
+      setAccountPreferences({
+        notificationsEnabled: data.desktopNotifications ?? true,
+        soundEnabled: data.soundEnabled ?? true,
+        soundType: data.notificationSound ?? 'ding',
+      });
+    } catch (error) {
+      setPreferencesError(getErrorMessage(error));
+    } finally {
+      setSavingPreferences(false);
+    }
+  }
 
   return (
     <div>
@@ -302,7 +379,7 @@ function NotificationsSection({
 
       <Card>
         <p className="text-xs font-semibold text-chatz-text-muted uppercase tracking-wide mb-3">Tipos de notificação</p>
-        <ToggleRow label="Notificações ativas" description="Mestre — desliga tudo" checked={notificationsEnabled} onChange={setNotificationsEnabled} />
+        <ToggleRow label="Notificações ativas" description="Mestre — desliga tudo" checked={notificationsEnabled} onChange={(value) => void saveAccountPreferences({ desktopNotifications: value })} disabled={savingPreferences} />
         <Divider />
         <ToggleRow label="Mensagens do cliente" description="Notifica quando cliente manda mensagem" checked={messageNotifications} onChange={setMessageNotifications} disabled={!notificationsEnabled} />
         <Divider />
@@ -313,7 +390,7 @@ function NotificationsSection({
 
       <Card>
         <p className="text-xs font-semibold text-chatz-text-muted uppercase tracking-wide mb-3">Sons</p>
-        <ToggleRow label="Sons ativos" description="Toca som ao receber notificação" checked={soundEnabled} onChange={setSoundEnabled} />
+        <ToggleRow label="Sons ativos" description="Toca som ao receber notificação" checked={soundEnabled} onChange={(value) => void saveAccountPreferences({ soundEnabled: value })} disabled={savingPreferences} />
         {soundEnabled && (
           <>
             <Divider />
@@ -324,10 +401,11 @@ function NotificationsSection({
                   <button
                     key={s}
                     onClick={() => {
-                      setSoundType(s);
+                      void saveAccountPreferences({ notificationSound: s });
                       if (s === 'ding') playDing();
                       if (s === 'notification') playNotification();
                     }}
+                    disabled={savingPreferences}
                     className={`px-3 py-1.5 rounded-chatz text-xs font-medium transition-all ${
                       soundType === s
                         ? 'bg-chatz-primary text-white'
@@ -349,6 +427,7 @@ function NotificationsSection({
             </div>
           </>
         )}
+        {preferencesError && <p role="alert" className="mt-3 text-sm text-chatz-danger">{preferencesError}</p>}
       </Card>
     </div>
   );

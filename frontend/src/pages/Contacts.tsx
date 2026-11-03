@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, getErrorMessage } from '../lib/api';
 import { IconBar } from '../components/chat/IconBar';
-import { PageBackButton } from '../components/PageBackButton';
+import { WorkspaceHeader } from '../components/WorkspaceHeader';
 import { useAuthStore } from '../stores/auth';
 import type { Contact, Sector, Ticket } from '../types';
 
@@ -107,41 +107,38 @@ export function Contacts() {
       <IconBar />
       <main className="flex-1 overflow-y-auto">
       <div className="max-w-6xl mx-auto px-6 py-8">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <PageBackButton />
-          <div>
-          <h1 className="text-2xl font-bold text-chatz-text">Contatos</h1>
-          <p className="text-chatz-text-muted text-sm">
-            Cadastro centralizado dos contatos de clientes
-          </p>
-          </div>
-        </div>
-        <button
-          onClick={openCreate}
-          className="px-5 py-2.5 bg-chatz-primary hover:bg-chatz-primary-hover
-                     text-white font-medium rounded-lg transition-all"
-        >
-          + Novo contato
-        </button>
-      </div>
+      <WorkspaceHeader
+        section="Relacionamento"
+        title="Contatos"
+        description="Acesse rapidamente os dados dos clientes e inicie novas conversas."
+        action={(
+          <button
+            onClick={openCreate}
+            className="w-full rounded-xl bg-chatz-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-chatz-primary-hover hover:shadow-md sm:w-auto"
+          >
+            + Novo contato
+          </button>
+        )}
+      />
 
-      <div className="mb-5">
+      <div className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl border border-chatz-border bg-white p-3 shadow-sm">
         <label htmlFor="contact-search" className="sr-only">
           Buscar contato
         </label>
-        <input
-          id="contact-search"
-          type="search"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Buscar por nome, telefone ou empresa..."
-          className="w-full px-4 py-3 bg-chatz-surface border border-chatz-border
-                     rounded-chatz text-sm text-chatz-text
-                     placeholder:text-chatz-text-subtle
-                     focus:border-chatz-primary focus:ring-2
-                     focus:ring-chatz-primary/20"
-        />
+        <div className="flex min-w-[220px] flex-1 items-center gap-3 rounded-xl border border-chatz-border bg-chatz-surface-alt px-3">
+          <ContactSearchIcon />
+          <input
+            id="contact-search"
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar por nome, telefone ou empresa..."
+            className="w-full border-0 bg-transparent py-3 text-sm text-chatz-text outline-none placeholder:text-chatz-text-subtle"
+          />
+        </div>
+        <span className="px-2 text-xs font-medium text-chatz-text-muted">
+          {loading ? 'Buscando...' : `${contacts.length} ${contacts.length === 1 ? 'contato' : 'contatos'}`}
+        </span>
       </div>
 
       {error && (
@@ -172,50 +169,46 @@ export function Contacts() {
           )}
         </div>
       ) : (
-        <div className="bg-chatz-surface border border-chatz-border
-                        rounded-chatz-xl overflow-hidden">
+        <div className="overflow-hidden rounded-2xl border border-chatz-border bg-white shadow-sm">
           <div className="divide-y divide-chatz-border">
             {contacts.map((contact) => (
               <article
                 key={contact.id}
-                className="flex flex-wrap items-center justify-between gap-4
-                           px-5 py-4"
+                className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-chatz-surface-alt/70"
               >
-                <div className="min-w-0">
-                  <h2 className="font-semibold text-chatz-text">{contact.name}</h2>
-                  <p className="text-sm text-chatz-text-muted">{contact.phone}</p>
-                  {contact.company && (
-                    <p className="text-xs text-chatz-text-subtle mt-1">
-                      {contact.company}
-                    </p>
-                  )}
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-100 to-orange-100 text-sm font-bold text-slate-700">
+                    {contact.name.trim().slice(0, 1).toUpperCase()}
+                  </span>
+                  <div className="min-w-0">
+                    <h2 className="truncate font-semibold text-chatz-text">{contact.name}</h2>
+                    <p className="text-sm text-chatz-text-muted">{contact.phone}</p>
+                    {contact.company && (
+                      <p className="mt-1 truncate text-xs text-chatz-text-subtle">{contact.company}</p>
+                    )}
+                  </div>
                 </div>
-                <button
-                  onClick={() => openEdit(contact)}
-                  className="px-3 py-2 border border-chatz-border
-                             text-chatz-text text-sm rounded-chatz
-                             hover:bg-chatz-surface-hover transition-all"
-                >
-                  Editar
-                </button>
-                <button
-                  onClick={() => setStartingContact(contact)}
-                  className="px-3 py-2 bg-chatz-primary text-white text-sm
-                             rounded-chatz hover:bg-chatz-primary-hover
-                             transition-all"
-                >
-                  Iniciar conversa
-                </button>
-                <button
-                  onClick={() => handleDelete(contact)}
-                  disabled={deletingId === contact.id}
-                  className="px-3 py-2 border border-chatz-danger-border
-                             text-chatz-danger text-sm rounded-chatz
-                             hover:bg-chatz-danger-light transition-all
-                             disabled:opacity-50"
-                >
-                  {deletingId === contact.id ? 'Excluindo...' : 'Excluir'}
-                </button>
+                <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+                  <button
+                    onClick={() => openEdit(contact)}
+                    className="rounded-lg border border-chatz-border px-3 py-2 text-xs font-semibold text-chatz-text transition hover:bg-chatz-surface-hover sm:text-sm"
+                  >
+                    Editar
+                  </button>
+                  <button
+                    onClick={() => setStartingContact(contact)}
+                    className="rounded-lg bg-chatz-primary px-3 py-2 text-xs font-semibold text-white transition hover:bg-chatz-primary-hover sm:text-sm"
+                  >
+                    Iniciar conversa
+                  </button>
+                  <button
+                    onClick={() => handleDelete(contact)}
+                    disabled={deletingId === contact.id}
+                    className="rounded-lg border border-chatz-danger-border px-3 py-2 text-xs font-semibold text-chatz-danger transition hover:bg-chatz-danger-light disabled:opacity-50 sm:text-sm"
+                  >
+                    {deletingId === contact.id ? 'Excluindo...' : 'Excluir'}
+                  </button>
+                </div>
               </article>
             ))}
           </div>
@@ -243,6 +236,15 @@ export function Contacts() {
       </div>
       </main>
     </div>
+  );
+}
+
+function ContactSearchIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4 shrink-0 text-chatz-text-subtle">
+      <circle cx="11" cy="11" r="7" />
+      <path strokeLinecap="round" d="m20 20-4-4" />
+    </svg>
   );
 }
 

@@ -95,6 +95,8 @@ const routes = [
   ['POST', '/auth/login', 400],
   ['GET', '/auth/me', 401],
   ['PUT', '/auth/me/status', 401],
+  ['PUT', '/auth/me/password', 401],
+  ['PATCH', '/auth/me/preferences', 401],
   ['POST', '/auth/me/profile-picture', 401],
   ['DELETE', '/auth/me/profile-picture', 401],
   ['POST', '/auth/users', 401],
@@ -321,7 +323,11 @@ test('agent performance tracks assignment periods, limits metrics to the signed-
   assert.equal(metricsResponse.status, 200);
   const metrics = await metricsResponse.json();
   assert.equal(metrics.assignmentsStarted, 1);
+  assert.equal(metrics.assignmentsCompleted, 1);
+  assert.equal(metrics.activeAssignments, 0);
+  assert.ok(metrics.totalAssignmentDurationMs >= 0);
   assert.equal(metrics.ratingsReceived, 0);
+  assert.deepEqual(metrics.ratingDistribution, { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 });
 
   const otherMetricsResponse = await fetch(
     `${baseUrl}/performance/mine?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`,
@@ -342,6 +348,14 @@ test('agent performance tracks assignment periods, limits metrics to the signed-
     (await prisma.ticketRating.findUnique({ where: { id: rating.id } })).score,
     5,
   );
+  const updatedMetricsResponse = await fetch(
+    `${baseUrl}/performance/mine?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`,
+    { headers: { authorization: 'Bearer ' + otherToken } },
+  );
+  const updatedMetrics = await updatedMetricsResponse.json();
+  assert.equal(updatedMetrics.averageRating, 5);
+  assert.equal(updatedMetrics.ratingsReceived, 1);
+  assert.equal(updatedMetrics.ratingDistribution[5], 1);
   const duplicateReply = await captureTicketRating(
     fixture.client.phone,
     `#${rating.protocol} 4`,
@@ -488,6 +502,119 @@ test('agents can update only their own status and admins cannot use the agent st
     body: JSON.stringify({ status: 'BUSY' }),
   });
   assert.equal(forbiddenResponse.status, 403);
+});
+
+test('users can change their password only after verifying the current password', async () => {
+  const currentPassword = 'current-test-password';
+  const user = await prisma.user.create({
+    data: {
+      name: 'Conta de senha',
+      role: 'AGENT',
+      sectorId: fixture.sector.id,
+      email: `password-user-${process.pid}@test.invalid`,
+      password: await bcrypt.hash(currentPassword, 10),
+    },
+  });
+  const token = signToken({ sub: user.id, role: 'AGENT' });
+  const makeRequest = (body) =>
+    fetch(`${baseUrl}/auth/me/password`, {
+      method: 'PUT',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+  const wrongPassword = await makeRequest({
+    currentPassword: 'wrong-password',
+    newPassword: 'replacement-password',
+  });
+  assert.equal(wrongPassword.status, 400);
+  assert.equal(
+    await bcrypt.compare(
+      currentPassword,
+      (await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).password
+    ),
+    true
+  );
+
+  const invalidPassword = await makeRequest({
+    currentPassword,
+    newPassword: 'short',
+  });
+  assert.equal(invalidPassword.status, 400);
+
+  const changedPassword = await makeRequest({
+    currentPassword,
+    newPassword: 'replacement-password',
+  });
+  assert.equal(changedPassword.status, 200);
+  assert.deepEqual(await changedPassword.json(), { message: 'Senha alterada com sucesso' });
+
+  const oldLogin = await fetch(`${baseUrl}/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: user.email, password: currentPassword }),
+  });
+  assert.equal(oldLogin.status, 401);
+  const newLogin = await fetch(`${baseUrl}/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: user.email, password: 'replacement-password' }),
+  });
+  assert.equal(newLogin.status, 200);
+  const loginResult = await newLogin.json();
+  assert.equal('password' in loginResult.user, false);
+});
+
+test('users can persist their own sound and notification preferences', async () => {
+  const user = await prisma.user.create({
+    data: {
+      name: 'Conta de preferências',
+      role: 'AGENT',
+      sectorId: fixture.sector.id,
+      email: `preferences-user-${process.pid}@test.invalid`,
+    },
+  });
+  const token = signToken({ sub: user.id, role: 'AGENT' });
+  const response = await fetch(`${baseUrl}/auth/me/preferences`, {
+    method: 'PATCH',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      desktopNotifications: false,
+      soundEnabled: false,
+      notificationSound: 'notification',
+      userId: fixture.otherAgent.id,
+    }),
+  });
+
+  assert.equal(response.status, 200);
+  const updatedUser = await response.json();
+  assert.equal(updatedUser.id, user.id);
+  assert.equal(updatedUser.desktopNotifications, false);
+  assert.equal(updatedUser.soundEnabled, false);
+  assert.equal(updatedUser.notificationSound, 'notification');
+  assert.equal('password' in updatedUser, false);
+
+  const otherUser = await prisma.user.findUniqueOrThrow({
+    where: { id: fixture.otherAgent.id },
+  });
+  assert.equal(otherUser.desktopNotifications, true);
+  assert.equal(otherUser.soundEnabled, true);
+
+  const invalidResponse = await fetch(`${baseUrl}/auth/me/preferences`, {
+    method: 'PATCH',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ notificationSound: 'invalid' }),
+  });
+  assert.equal(invalidResponse.status, 400);
 });
 
 test('successful agent login returns an offline agent to online status', async () => {

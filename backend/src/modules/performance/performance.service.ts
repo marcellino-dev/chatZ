@@ -172,13 +172,23 @@ export async function getMyPerformance(
     (session) => Math.max(0, (session.endedAt ?? now).getTime() - session.assignedAt.getTime())
   );
   const durationMs = durations.reduce((total, duration) => total + duration, 0);
+  const ratingDistribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  for (const rating of ratings) {
+    if (rating.score !== null && rating.score >= 1 && rating.score <= 5) {
+      ratingDistribution[rating.score as 1 | 2 | 3 | 4 | 5] += 1;
+    }
+  }
 
   return {
     assignmentsStarted: sessions.length,
+    assignmentsCompleted: sessions.filter((session) => session.endedAt !== null).length,
+    activeAssignments: sessions.filter((session) => session.endedAt === null).length,
+    totalAssignmentDurationMs: durationMs,
     averageAssignmentDurationMs: durations.length ? Math.round(durationMs / durations.length) : null,
     ratingsReceived: ratings.length,
     averageRating: ratings.length
       ? Number((ratings.reduce((sum, rating) => sum + (rating.score ?? 0), 0) / ratings.length).toFixed(1))
       : null,
+    ratingDistribution,
   };
 }

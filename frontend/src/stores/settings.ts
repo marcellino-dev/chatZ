@@ -30,6 +30,11 @@ interface SettingsState {
   setHidePhone: (v: boolean) => void;
   setHideEmail: (v: boolean) => void;
   setHasRequestedPermission: (v: boolean) => void;
+  setAccountPreferences: (preferences: {
+    notificationsEnabled: boolean;
+    soundEnabled: boolean;
+    soundType: MessageSound;
+  }) => void;
   reset: () => void;
 }
 
@@ -62,6 +67,7 @@ export const useSettingsStore = create<SettingsState>()(
       setHidePhone: (v) => set({ hidePhone: v }),
       setHideEmail: (v) => set({ hideEmail: v }),
       setHasRequestedPermission: (v) => set({ hasRequestedPermission: v }),
+      setAccountPreferences: (preferences) => set(preferences),
       reset: () => set(DEFAULTS),
     }),
     { name: 'chatz-settings' }

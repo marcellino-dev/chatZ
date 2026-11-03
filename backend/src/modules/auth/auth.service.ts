@@ -3,7 +3,12 @@ import type { AgentStatus } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { AppError } from '../../middlewares/errorHandler';
 import { signToken } from '../../utils/jwt';
-import { LoginInput, CreateUserInput } from './auth.schemas';
+import {
+  LoginInput,
+  CreateUserInput,
+  ChangePasswordInput,
+  UpdatePreferencesInput,
+} from './auth.schemas';
 
 // ==========================
 // LOGIN (admin/agent)
@@ -104,6 +109,53 @@ export async function me(userId: string) {
   }
 
   return user;
+}
+
+export async function changePassword(
+  userId: string,
+  data: ChangePasswordInput
+) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { password: true },
+  });
+  if (!user?.password) throw new AppError('Conta sem senha para atualizar', 400);
+
+  const passwordMatches = await bcrypt.compare(data.currentPassword, user.password);
+  if (!passwordMatches) throw new AppError('Senha atual incorreta', 400);
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { password: await bcrypt.hash(data.newPassword, 10) },
+  });
+  return { message: 'Senha alterada com sucesso' };
+}
+
+export async function updatePreferences(
+  userId: string,
+  data: UpdatePreferencesInput
+) {
+  return prisma.user.update({
+    where: { id: userId },
+    data,
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      phone: true,
+      role: true,
+      active: true,
+      sectorId: true,
+      profilePictureUrl: true,
+      status: true,
+      statusChangedAt: true,
+      soundEnabled: true,
+      desktopNotifications: true,
+      notificationSound: true,
+      sector: { select: { id: true, name: true, slug: true } },
+      createdAt: true,
+    },
+  });
 }
 
 export async function updateStatus(userId: string, status: AgentStatus) {

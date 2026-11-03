@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { UserModal } from '../components/UserModal';
 import { IconBar } from '../components/chat/IconBar';
-import { PageBackButton } from '../components/PageBackButton';
+import { WorkspaceHeader } from '../components/WorkspaceHeader';
 import { useAuthStore } from '../stores/auth';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 import type { User } from '../types';
@@ -15,6 +15,7 @@ export function Users() {
   const [error, setError] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
+  const activeUsers = users.filter((user) => user.active).length;
 
   async function loadUsers() {
     setLoading(true);
@@ -66,24 +67,32 @@ export function Users() {
       <IconBar />
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-6xl px-6 py-8">
-          <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <PageBackButton />
-              <div>
-                <h1 className="text-2xl font-bold text-chatz-text">Equipe</h1>
-                <p className="text-sm text-chatz-text-muted">
-                  Gerencie atendentes e funcionários
-                </p>
+          <WorkspaceHeader
+            section="Administração"
+            title="Equipe"
+            description="Gerencie acessos, setores e disponibilidade dos atendentes."
+            action={(
+              <button
+                onClick={handleCreate}
+                className="w-full rounded-xl bg-chatz-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-chatz-primary-hover hover:shadow-md sm:w-auto"
+              >
+                + Adicionar atendente
+              </button>
+            )}
+          />
+
+          {!loading && !error && users.length > 0 && (
+            <div className="mb-5 grid gap-3 sm:grid-cols-2">
+              <div className="flex items-center gap-3 rounded-2xl border border-chatz-border bg-white p-4 shadow-sm">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-700"><TeamIcon /></span>
+                <div><p className="text-xs font-medium text-chatz-text-muted">Total de atendentes</p><p className="text-xl font-bold text-chatz-text">{users.length}</p></div>
+              </div>
+              <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-white p-4 shadow-sm">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /></span>
+                <div><p className="text-xs font-medium text-chatz-text-muted">Contas ativas</p><p className="text-xl font-bold text-chatz-text">{activeUsers}</p></div>
               </div>
             </div>
-            <button
-              onClick={handleCreate}
-              className="rounded-xl bg-chatz-button-gradient px-5 py-2.5
-                         font-semibold text-white shadow-primary transition hover:brightness-105"
-            >
-              + Adicionar funcionário
-            </button>
-          </div>
+          )}
 
           {loading && (
             <div className="py-16 text-center text-sm text-chatz-text-muted">
@@ -121,7 +130,7 @@ export function Users() {
 
           {!loading && !error && users.length > 0 && (
             <div className="overflow-hidden rounded-2xl border border-chatz-border
-                            bg-chatz-surface shadow-chatz-sm">
+                            bg-white shadow-sm">
               <div className="flex items-center justify-between border-b border-chatz-border
                               bg-chatz-surface-alt px-5 py-4">
                 <div>

@@ -3,6 +3,19 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { api } from '../lib/api';
 import { connectSocket, disconnectSocket } from '../lib/socket';
 import type { User, AgentStatus, AuthResponse, LoginPayload } from '../types';
+import { useSettingsStore, type MessageSound } from './settings';
+
+function syncAccountPreferences(user: User) {
+  const soundType: MessageSound =
+    user.notificationSound === 'notification' || user.notificationSound === 'none'
+      ? user.notificationSound
+      : 'ding';
+  useSettingsStore.getState().setAccountPreferences({
+    notificationsEnabled: user.desktopNotifications ?? true,
+    soundEnabled: user.soundEnabled ?? true,
+    soundType,
+  });
+}
 
 interface AuthState {
   user: User | null;
@@ -29,6 +42,7 @@ export const useAuthStore = create<AuthState>()(
         sessionStorage.setItem('chatz_token', data.token);
         localStorage.removeItem('chatz_token');
         localStorage.removeItem('chatz_user');
+        syncAccountPreferences(data.user);
 
         set({
           user: data.user,
@@ -78,6 +92,7 @@ export const useAuthStore = create<AuthState>()(
         if (isAuthenticated && token) {
           connectSocket(token);
           const { data } = await api.get<User>('/auth/me');
+          syncAccountPreferences(data);
           set({ user: data });
           if (data.role === 'AGENT' && data.status === 'OFFLINE') {
             await get().updateStatus('ONLINE');

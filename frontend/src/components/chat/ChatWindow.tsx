@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Fragment, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth';
 import { useMessagesStore } from '../../stores/messages';
 import { useTicketsStore } from '../../stores/tickets';
 import { api, getErrorMessage } from '../../lib/api';
 import { getSocket } from '../../lib/socket';
+import { formatPhone, phoneHref } from '../../lib/format';
 import { AttachmentPreview, type Attachment } from './AttachmentPreview';
 import { SimpleEmojiPicker } from './EmojiPicker';
 import { KnowledgeBaseConsultation } from './KnowledgeBaseConsultation';
@@ -61,6 +62,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   });
   const [noteDraft, setNoteDraft] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
+  const [internalNoteOpen, setInternalNoteOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -405,6 +407,16 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
     });
   }
 
+  function openQuickReplies() {
+    if (!showQuickReplies) {
+      const next = input === '' || /\s$/.test(input) ? `${input}/` : `${input} /`;
+      handleInputChange(next);
+    }
+    setEmojiOpen(false);
+    setStickerPickerOpen(false);
+    inputRef.current?.focus();
+  }
+
   function handleComposerKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (!showQuickReplies || matchingQuickReplies.length === 0) {
       if (event.key === 'Escape') setActiveQuickReply(0);
@@ -734,6 +746,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
         };
       });
       setNoteDraft('');
+      setInternalNoteOpen(false);
     } catch (error) {
       setTicketNotes((current) => ({
         ticketId: id,
@@ -850,9 +863,17 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       ? `${typingNames[0]} está digitando...`
       : `${typingNames.slice(0, 2).join(', ')} estão digitando...`;
 
+  const statusInfo =
+    ticket.status === 'IN_PROGRESS'
+      ? { label: 'Em atendimento', dot: 'bg-emerald-500', text: 'text-emerald-600' }
+      : ticket.status === 'WAITING'
+      ? { label: 'Aguardando', dot: 'bg-amber-400', text: 'text-amber-600' }
+      : { label: 'Encerrado', dot: 'bg-slate-400', text: 'text-slate-500' };
+  const callHref = phoneHref(ticket.client.phone);
+
   return (
     <div
-      className="flex-1 flex flex-col bg-chatz-bg min-w-0 relative"
+      className="relative flex min-w-0 flex-1 flex-col bg-[#f4f5fa]"
       onDragOver={canSend ? handleDragOver : undefined}
       onDragLeave={canSend ? handleDragLeave : undefined}
       onDrop={canSend ? handleDrop : undefined}
@@ -865,74 +886,102 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
         </div>
       )}
 
-      <header className="h-16 px-4 bg-chatz-surface border-b border-chatz-border flex items-center justify-between shrink-0 gap-3">
+      <header className="z-10 flex min-h-[88px] shrink-0 items-center justify-between gap-2 border-b border-slate-200/70 bg-white px-3 sm:gap-3 sm:px-6">
+        <button
+          type="button"
+          onClick={() => navigate('/chat')}
+          aria-label="Voltar para caixa de entrada"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100 md:hidden"
+        >
+          <BackIcon />
+        </button>
         <button
           onClick={onToggleInfo}
-          className="flex items-center gap-3 hover:bg-chatz-surface-hover rounded-chatz px-2 py-1 transition-all min-w-0"
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-1 py-1 text-left transition-all hover:bg-slate-50 sm:gap-4"
         >
-          <ProfileAvatar
-            name={ticket.client.name}
-            pictureUrl={ticket.client.profilePictureUrl}
-            sizeClass="w-10 h-10"
-          />
-          <div className="text-left min-w-0">
-            <p className="text-sm font-semibold text-chatz-text truncate">
+          <span className="relative shrink-0">
+            <ProfileAvatar
+              name={ticket.client.name}
+              pictureUrl={ticket.client.profilePictureUrl}
+              sizeClass="h-[60px] w-[60px]"
+            />
+          </span>
+          <div className="min-w-0 text-left">
+            <p className="truncate font-display text-xl font-bold leading-tight text-slate-900">
               {ticket.client.name}
             </p>
-            {ticket.client.company && (
-              <p className="text-[10px] font-medium text-chatz-pink truncate">
-                {ticket.client.company}
-              </p>
-            )}
-            <p className="text-xs text-chatz-text-muted truncate">
+            <p className="flex items-center gap-1.5 truncate text-[13px] leading-tight">
               {typingText ? (
-                <span className="text-chatz-primary italic">{typingText}</span>
+                <span className="italic text-violet-600">{typingText}</span>
               ) : (
-                `${ticket.client.phone} · #${ticket.id.slice(0, 8)}`
+                <>
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${statusInfo.dot}`} />
+                  <span className={`font-medium ${statusInfo.text}`}>{statusInfo.label}</span>
+                  {ticket.client.company && (
+                    <span className="truncate text-slate-400">· {ticket.client.company}</span>
+                  )}
+                </>
               )}
+            </p>
+            <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-slate-500">
+              <span className="flex items-center gap-1.5">
+                <PhoneSmallIcon />
+                {formatPhone(ticket.client.phone)}
+              </span>
+              <span className="rounded-lg bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-violet-700">
+                #{ticket.id.slice(0, 8)}
+              </span>
             </p>
           </div>
         </button>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          {canAssign && (
+            <button
+              onClick={handleAssign}
+              disabled={assigning}
+              className="rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:text-sm"
+            >
+              {assigning ? 'Assumindo...' : '🎧 Assumir'}
+            </button>
+          )}
+          {callHref && (
+            <a
+              href={callHref}
+              title="Ligar"
+              aria-label="Ligar para o contato"
+              className="hidden h-12 w-12 items-center justify-center rounded-full bg-[#f1f2f9] text-slate-700 transition hover:bg-slate-200 sm:flex"
+            >
+              <PhoneIcon />
+            </a>
+          )}
+          <button
+            onClick={onToggleInfo}
+            title="Info do cliente"
+            aria-label={infoOpen ? 'Fechar detalhes do contato' : 'Ver detalhes do contato'}
+            className={`flex h-10 w-10 items-center justify-center rounded-full transition-all sm:h-12 sm:w-12 ${
+              infoOpen
+                ? 'bg-violet-100 text-violet-700'
+                : 'bg-[#f1f2f9] text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            <InfoIcon />
+          </button>
           {user?.role !== 'CLIENT' && (
             <button
               type="button"
               onClick={() => setKnowledgeBaseOpen(true)}
               title="Consultar base de conhecimento"
               aria-label="Consultar base de conhecimento"
-              className="flex h-9 items-center gap-2 rounded-chatz px-3 text-sm
-                         text-chatz-text-muted transition-colors hover:bg-chatz-surface-hover
-                         hover:text-chatz-text"
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f1f2f9] text-slate-700 transition hover:bg-slate-200 sm:h-12 sm:w-12"
             >
               <KnowledgeBaseIcon />
-              <span className="hidden xl:inline">Base de conhecimento</span>
             </button>
           )}
-          {canAssign && (
-            <button
-              onClick={handleAssign}
-              disabled={assigning}
-              className="px-4 py-2 rounded-chatz bg-chatz-button-gradient text-white text-sm font-semibold shadow-[0_4px_14px_rgba(236,72,153,0.35)] hover:brightness-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {assigning ? 'Assumindo...' : '🎧 Assumir'}
-            </button>
-          )}
-          <button
-            onClick={onToggleInfo}
-            title="Info do cliente"
-            className={`w-9 h-9 rounded-chatz flex items-center justify-center transition-all ${
-              infoOpen
-                ? 'bg-chatz-primary text-white'
-                : 'text-chatz-text-muted hover:bg-chatz-surface-hover'
-            }`}
-          >
-            <InfoIcon />
-          </button>
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <div className="flex-1 overflow-y-auto bg-[radial-gradient(circle_at_1px_1px,rgba(148,163,184,0.14)_1px,transparent_0)] bg-[size:22px_22px] px-3 py-4 sm:px-8 sm:py-6">
         {timeline.length === 0 && !notesLoading && (
           <div className="text-center py-12 text-chatz-text-muted text-sm">
             Nenhuma mensagem ainda. Comece a conversa.
@@ -943,65 +992,72 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
             Carregando notas internas...
           </p>
         )}
-        {notesError && (
+        {notesError && !internalNoteOpen && (
           <p role="alert" className="mb-3 rounded-chatz bg-chatz-danger-light p-2 text-xs text-chatz-danger">
             {notesError}
           </p>
         )}
-        <div className="space-y-2">
-          {timeline.map((entry) =>
-            entry.type === 'note' ? (
-              <InternalNote
-                key={`note-${entry.id}`}
-                note={entry.note}
-                canEdit={canManageNotes && entry.note.authorId === user?.id}
-                onSave={handleUpdateNote}
-                onDelete={handleDeleteNote}
-              />
-            ) : (() => {
-              const msg = entry.message;
-              const isAgentMessage = msg.sender.role !== 'CLIENT';
-              return (
-              <MessageBubble
-                key={`message-${msg.id}`}
-                message={msg}
-                isAgent={isAgentMessage}
-                onFavoriteSticker={
-                  user?.role !== 'CLIENT' &&
-                  msg.sender.role === 'CLIENT' &&
-                  msg.attachment?.sticker
-                    ? () => toggleIncomingStickerFavorite(msg)
-                    : undefined
-                }
-                stickerSaved={stickers.some(
-                  (sticker) => sticker.sourceMessageId === msg.id
+        <div className="space-y-3">
+          {timeline.map((entry, index) => {
+            const previous = timeline[index - 1];
+            const showDay = !previous || !isSameDay(previous.createdAt, entry.createdAt);
+            return (
+              <Fragment key={`${entry.type}-${entry.id}`}>
+                {showDay && <DaySeparator date={entry.createdAt} />}
+                {entry.type === 'note' ? (
+                  <InternalNote
+                    note={entry.note}
+                    canEdit={canManageNotes && entry.note.authorId === user?.id}
+                    onSave={handleUpdateNote}
+                    onDelete={handleDeleteNote}
+                  />
+                ) : (
+                  (() => {
+                    const msg = entry.message;
+                    const isAgentMessage = msg.sender.role !== 'CLIENT';
+                    return (
+                      <MessageBubble
+                        message={msg}
+                        isAgent={isAgentMessage}
+                        onFavoriteSticker={
+                          user?.role !== 'CLIENT' &&
+                          msg.sender.role === 'CLIENT' &&
+                          msg.attachment?.sticker
+                            ? () => toggleIncomingStickerFavorite(msg)
+                            : undefined
+                        }
+                        stickerSaved={stickers.some(
+                          (sticker) => sticker.sourceMessageId === msg.id
+                        )}
+                        favoriteMenuOpen={favoriteMenuMessageId === msg.id}
+                        onStickerClick={
+                          user?.role !== 'CLIENT' &&
+                          msg.sender.role === 'CLIENT' &&
+                          msg.attachment?.sticker
+                            ? () =>
+                                setFavoriteMenuMessageId((current) =>
+                                  current === msg.id ? null : msg.id
+                                )
+                            : undefined
+                        }
+                      />
+                    );
+                  })()
                 )}
-                favoriteMenuOpen={favoriteMenuMessageId === msg.id}
-                onStickerClick={
-                  user?.role !== 'CLIENT' &&
-                  msg.sender.role === 'CLIENT' &&
-                  msg.attachment?.sticker
-                    ? () =>
-                        setFavoriteMenuMessageId((current) =>
-                          current === msg.id ? null : msg.id
-                        )
-                    : undefined
-                }
-              />
-              );
-            })()
-          )}
+              </Fragment>
+            );
+          })}
         </div>
 
         {typingText && (
           <div className="flex items-center gap-2 mt-3 animate-fade-in">
-            <div className="bg-chatz-surface border border-chatz-border rounded-2xl rounded-bl-sm px-3 py-2">
+            <div className="rounded-2xl rounded-bl-md bg-white px-3 py-2 shadow-sm">
               <div className="flex items-center gap-1.5">
-                <span className="text-xs text-chatz-text-muted">{typingText}</span>
+                <span className="text-xs text-slate-500">{typingText}</span>
                 <span className="flex gap-0.5">
-                  <span className="w-1 h-1 bg-chatz-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="w-1 h-1 bg-chatz-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-1 h-1 bg-chatz-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  <span className="w-1 h-1 bg-violet-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-1 h-1 bg-violet-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1 h-1 bg-violet-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                 </span>
               </div>
             </div>
@@ -1011,43 +1067,58 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
         <div ref={messagesEndRef} />
       </div>
 
-      {canManageNotes && (
-        <form
-          onSubmit={handleCreateNote}
-          className="border-t border-amber-300 bg-amber-50 px-3 py-2"
-        >
-          <label
-            htmlFor="internal-note"
-            className="mb-1 block text-xs font-semibold text-amber-900"
-          >
-            Nota interna · só equipe
-          </label>
-          <div className="flex items-end gap-2">
-            <textarea
-              id="internal-note"
-              value={noteDraft}
-              maxLength={5000}
-              rows={2}
-              onChange={(event) => setNoteDraft(event.target.value)}
-              placeholder="Escreva uma observação que não será enviada ao cliente"
-              className="min-h-10 flex-1 resize-y rounded-chatz border border-amber-300 bg-white px-3 py-2 text-sm text-chatz-text outline-none focus:border-amber-500"
-            />
-            <button
-              type="submit"
-              disabled={noteSaving || !noteDraft.trim()}
-              className="rounded-chatz bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:opacity-50"
-            >
-              {noteSaving ? 'Salvando...' : 'Adicionar'}
-            </button>
-          </div>
-        </form>
-      )}
-
-      <footer className="border-t border-chatz-border bg-chatz-surface shrink-0">
+      <footer className="shrink-0 bg-[#f4f5fa]">
         {canSend ? (
           <>
+            {canManageNotes && internalNoteOpen && (
+              <form onSubmit={handleCreateNote} className="px-3 pt-2 sm:px-5">
+                <div className="flex items-center gap-2.5 rounded-2xl border border-amber-200 bg-[#fff4de] px-4 py-2.5 text-sm text-amber-950 shadow-sm">
+                  <span className="shrink-0 text-amber-800">
+                    <LockIcon />
+                  </span>
+                  <label htmlFor="internal-note" className="shrink-0 font-bold">
+                    Nota interna:
+                  </label>
+                  <textarea
+                    id="internal-note"
+                    autoFocus
+                    value={noteDraft}
+                    maxLength={5000}
+                    rows={1}
+                    onChange={(event) => setNoteDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault();
+                        event.currentTarget.form?.requestSubmit();
+                      }
+                    }}
+                    placeholder="Visível somente para a equipe..."
+                    className="max-h-24 min-h-[22px] min-w-0 flex-1 resize-none bg-transparent leading-snug outline-none placeholder:text-amber-700/50"
+                  />
+                  <button
+                    type="submit"
+                    disabled={noteSaving || !noteDraft.trim()}
+                    className="shrink-0 rounded-lg bg-amber-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {noteSaving ? 'Salvando...' : 'Adicionar'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInternalNoteOpen(false)}
+                    aria-label="Fechar nota interna"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-amber-800 transition hover:bg-amber-100"
+                  >
+                    <CloseSmallIcon />
+                  </button>
+                </div>
+                {notesError && (
+                  <p role="alert" className="mt-1.5 px-1 text-xs font-medium text-chatz-danger">{notesError}</p>
+                )}
+              </form>
+            )}
+
             {pendingFiles.length > 0 && (
-              <div className="px-3 pt-3">
+              <div className="px-4 pt-3 sm:px-5">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs text-chatz-text-muted font-medium">
                     {pendingFiles.length} arquivo{pendingFiles.length > 1 ? 's' : ''} anexado{pendingFiles.length > 1 ? 's' : ''}
@@ -1064,7 +1135,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
                   {pendingFiles.map((pending) => (
                     <div
                       key={pending.id}
-                      className="relative bg-chatz-surface-alt rounded-chatz border border-chatz-border p-2 flex items-center gap-2 max-w-[220px]"
+                      className="relative flex max-w-[220px] items-center gap-2 rounded-xl border border-slate-200 bg-white p-2 shadow-sm"
                     >
                       <div className="w-10 h-10 rounded bg-chatz-primary-light flex items-center justify-center shrink-0 overflow-hidden">
                         {pending.preview?.type === 'image' ? (
@@ -1107,7 +1178,7 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
               </div>
             )}
 
-            <form onSubmit={handleSend} className="p-3 flex items-center gap-2 relative">
+            <form onSubmit={handleSend} className="relative flex items-center gap-2 p-3 sm:gap-3 sm:px-5 sm:py-4">
               {stickerPickerOpen && user?.role !== 'CLIENT' && (
                 <div
                   role="dialog"
@@ -1233,54 +1304,99 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
                 onChange={handleFileInputChange}
               />
 
-              <button
-                type="button"
-                title="Anexar arquivos"
-                onClick={() => fileInputRef.current?.click()}
-                className="w-10 h-10 rounded-chatz flex items-center justify-center text-chatz-text-muted hover:bg-chatz-surface-hover transition-all"
-              >
-                <PaperclipIcon />
-              </button>
-
-              {user?.role !== 'CLIENT' && (
+              <div className="flex shrink-0 items-center gap-0.5 rounded-full bg-white p-1 shadow-sm ring-1 ring-slate-200/70 sm:gap-1 sm:p-1.5">
                 <button
                   type="button"
-                  title="Minhas figurinhas"
-                  aria-label="Abrir minhas figurinhas"
-                  aria-expanded={stickerPickerOpen}
-                  onClick={() => {
-                    setStickerPickerOpen((open) => !open);
-                    setEmojiOpen(false);
-                  }}
-                  className={`w-10 h-10 rounded-chatz flex items-center justify-center
-                              transition-all ${
-                                stickerPickerOpen
-                                  ? 'bg-chatz-primary-light text-chatz-primary'
-                                  : 'text-chatz-text-muted hover:bg-chatz-surface-hover'
-                              }`}
+                  title="Anexar arquivos"
+                  aria-label="Anexar arquivos"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
                 >
-                  <StickerIcon />
+                  <PaperclipIcon />
                 </button>
-              )}
 
-              <button
-                type="button"
-                ref={emojiButtonRef}
-                title="Emoji"
-                onClick={() => {
-                  setEmojiOpen((v) => !v);
-                  setStickerPickerOpen(false);
-                }}
-                className={`w-10 h-10 rounded-chatz flex items-center justify-center transition-all ${
-                  emojiOpen
-                    ? 'bg-chatz-primary-light text-chatz-primary'
-                    : 'text-chatz-text-muted hover:bg-chatz-surface-hover'
-                }`}
-              >
-                <EmojiIcon />
-              </button>
+                <button
+                  type="button"
+                  ref={emojiButtonRef}
+                  title="Emoji"
+                  aria-label="Emoji"
+                  onClick={() => {
+                    setEmojiOpen((v) => !v);
+                    setStickerPickerOpen(false);
+                  }}
+                  className={`flex h-9 w-9 items-center justify-center rounded-full transition-all ${
+                    emojiOpen
+                      ? 'bg-violet-100 text-violet-700'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <EmojiIcon />
+                </button>
 
-              <div className="relative flex-1 min-w-0">
+                {user?.role !== 'CLIENT' && (
+                  <button
+                    type="button"
+                    title="Respostas rápidas"
+                    aria-label="Abrir respostas rápidas"
+                    onClick={openQuickReplies}
+                    className={`flex h-9 w-9 items-center justify-center rounded-full transition-all ${
+                      showQuickReplies
+                        ? 'bg-violet-100 text-violet-700'
+                        : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <SlashIcon />
+                  </button>
+                )}
+
+                {user?.role !== 'CLIENT' && (
+                  <button
+                    type="button"
+                    title="Minhas figurinhas"
+                    aria-label="Abrir minhas figurinhas"
+                    aria-expanded={stickerPickerOpen}
+                    onClick={() => {
+                      setStickerPickerOpen((open) => !open);
+                      setEmojiOpen(false);
+                    }}
+                    className={`hidden h-9 w-9 items-center justify-center rounded-full transition-all sm:flex ${
+                      stickerPickerOpen
+                        ? 'bg-violet-100 text-violet-700'
+                        : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <StickerIcon />
+                  </button>
+                )}
+
+                {canManageNotes && (
+                  <button
+                    type="button"
+                    title="Adicionar nota interna"
+                    aria-label="Adicionar nota interna, visível apenas para a equipe"
+                    aria-expanded={internalNoteOpen}
+                    aria-controls="internal-note"
+                    onClick={() => {
+                      setInternalNoteOpen((open) => !open);
+                      setEmojiOpen(false);
+                      setStickerPickerOpen(false);
+                      setTicketNotes((current) => ({ ...current, error: '' }));
+                    }}
+                    className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-all ${
+                      internalNoteOpen
+                        ? 'bg-amber-100 text-amber-800 ring-1 ring-amber-300'
+                        : 'text-slate-600 hover:bg-amber-50 hover:text-amber-700'
+                    }`}
+                  >
+                    <InternalNoteIcon />
+                    {notes.length > 0 && (
+                      <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-amber-500" />
+                    )}
+                  </button>
+                )}
+              </div>
+
+              <div className="relative min-w-0 flex-1">
                 {showQuickReplies && (
                   <div className="absolute bottom-full left-0 right-0 mb-2 z-50
                                   max-h-72 overflow-y-auto bg-chatz-surface
@@ -1332,18 +1448,17 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
                       : 'Digite sua mensagem...'
                   }
                   disabled={sending}
-                  className="w-full px-4 py-2.5 bg-chatz-surface-alt border
-                             border-chatz-border rounded-full text-sm
-                             text-chatz-text placeholder:text-chatz-text-subtle
-                             focus:border-chatz-primary focus:ring-2
-                             focus:ring-chatz-primary/20 transition-all"
+                  className="h-12 w-full rounded-full border-0 bg-white px-4 text-sm text-slate-800
+                             shadow-sm ring-1 ring-slate-200/70 outline-none transition-all
+                             placeholder:text-slate-500 focus:ring-2 focus:ring-violet-300 sm:h-[52px] sm:px-5"
                 />
               </div>
 
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="w-11 h-11 rounded-full bg-chatz-button-gradient text-white flex items-center justify-center shrink-0 shadow-[0_4px_14px_rgba(236,72,153,0.35)] hover:brightness-105 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
+                aria-label="Enviar mensagem"
+                className="flex h-12 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-r from-violet-600 via-fuchsia-600 to-pink-500 text-white shadow-lg shadow-fuchsia-300/40 transition hover:-translate-y-0.5 hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none sm:h-[52px] sm:w-[84px]"
               >
                 {sending ? (
                   <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -1366,6 +1481,44 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
       {knowledgeBaseOpen && user?.role !== 'CLIENT' && (
         <KnowledgeBaseConsultation onClose={() => setKnowledgeBaseOpen(false)} />
       )}
+    </div>
+  );
+}
+
+function isSameDay(a: string, b: string): boolean {
+  const da = new Date(a);
+  const db = new Date(b);
+  return (
+    da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
+  );
+}
+
+function formatDayLabel(value: string): string {
+  const date = new Date(value);
+  const now = new Date();
+  const dayMonth = date
+    .toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })
+    .replace(/ de (\p{L})/u, (_, letter: string) => ` de ${letter.toUpperCase()}`);
+
+  if (isSameDay(value, now.toISOString())) return `Hoje, ${dayMonth}`;
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (isSameDay(value, yesterday.toISOString())) return `Ontem, ${dayMonth}`;
+
+  return date.getFullYear() === now.getFullYear()
+    ? dayMonth
+    : `${dayMonth} de ${date.getFullYear()}`;
+}
+
+function DaySeparator({ date }: { date: string }) {
+  return (
+    <div className="flex justify-center py-2">
+      <span className="rounded-full bg-slate-200/70 px-4 py-1.5 text-xs font-medium text-slate-600">
+        {formatDayLabel(date)}
+      </span>
     </div>
   );
 }
@@ -1407,10 +1560,11 @@ function InternalNote({
   }
 
   return (
-    <article className="ml-auto max-w-[85%] rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950 shadow-sm">
+    <article className="mx-auto w-full max-w-3xl rounded-2xl border border-amber-200 bg-[#fff4de] px-4 py-2.5 text-sm text-amber-950 shadow-sm">
       <header className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
-        <span className="rounded-full bg-amber-200 px-2 py-0.5 font-bold uppercase tracking-wide">
-          Só equipe
+        <span className="flex items-center gap-1.5 font-bold text-amber-800">
+          <LockIcon />
+          Nota interna
         </span>
         <span className="font-semibold">{note.author.name}</span>
         <time dateTime={note.createdAt} className="text-amber-800">
@@ -1499,30 +1653,28 @@ function MessageBubble({
   const time = new Date(message.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const attachment = message.attachment;
   const hasContent = message.content?.trim().length > 0;
+  const inlineTime = hasContent && !attachment;
+
+  const timeEl = (
+    <span
+      className={`flex shrink-0 items-center gap-1 text-[11px] ${
+        isAgent ? 'text-emerald-800/70' : 'text-slate-400'
+      }`}
+    >
+      {time}
+      {isAgent && <DoubleCheckIcon />}
+    </span>
+  );
 
   return (
-    <div className={`flex items-end gap-2 ${isAgent ? 'justify-end' : 'justify-start'} animate-fade-in`}>
-      {!isAgent && (
-        <ProfileAvatar
-          name={message.sender.name}
-          pictureUrl={message.sender.profilePictureUrl}
-          sizeClass="w-7 h-7"
-          textClass="text-[9px]"
-        />
-      )}
-      <div className={`max-w-[70%] rounded-2xl ${isAgent ? 'bg-chatz-button-gradient text-white rounded-br-sm shadow-[0_2px_8px_rgba(236,72,153,0.20)]' : 'bg-chatz-surface border border-chatz-border text-chatz-text rounded-bl-sm'} ${attachment && !hasContent ? 'p-2' : 'px-3.5 py-2'}`}>
-        <p
-          className={`text-xs font-semibold mb-0.5 px-1.5 pt-0.5 ${
-            isAgent ? 'text-white/80' : 'text-chatz-purple'
-          }`}
-        >
-          {message.sender.name}
-        </p>
-        {message.sender.company && (
-          <p className="px-1.5 text-[10px] font-medium text-chatz-pink">
-            {message.sender.company}
-          </p>
-        )}
+    <div className={`flex items-end ${isAgent ? 'justify-end' : 'justify-start'} animate-fade-in`}>
+      <div
+        className={`max-w-[88%] rounded-2xl shadow-sm sm:max-w-[70%] ${
+          isAgent
+            ? 'rounded-br-md bg-[#dcf8d8] text-slate-900 ring-1 ring-emerald-200/60'
+            : 'rounded-bl-md bg-white text-slate-900 ring-1 ring-slate-200/60'
+        } ${attachment && !hasContent ? 'p-2' : 'px-4 py-2.5'}`}
+      >
         {attachment && (
           <div className={hasContent ? 'mb-2' : ''}>
             <div className="relative">
@@ -1553,19 +1705,24 @@ function MessageBubble({
             </div>
           </div>
         )}
-        {hasContent && (
-          <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
+        {inlineTime ? (
+          <div className="flex items-end gap-3">
+            <p className="min-w-0 whitespace-pre-wrap break-words text-[15px] leading-snug">
+              {message.content}
+            </p>
+            <span className="pb-0.5">{timeEl}</span>
+          </div>
+        ) : (
+          <>
+            {hasContent && (
+              <p className="whitespace-pre-wrap break-words text-[15px] leading-snug">
+                {message.content}
+              </p>
+            )}
+            <div className="mt-1 flex justify-end px-1">{timeEl}</div>
+          </>
         )}
-        <p className={`text-[10px] mt-1 text-right px-1 ${isAgent ? 'text-white/70' : 'text-chatz-text-subtle'}`}>{time}</p>
       </div>
-      {isAgent && (
-        <ProfileAvatar
-          name={message.sender.name}
-          pictureUrl={message.sender.profilePictureUrl}
-          sizeClass="w-7 h-7"
-          textClass="text-[9px]"
-        />
-      )}
     </div>
   );
 }
@@ -1594,19 +1751,55 @@ function getStickerUrl(url: string): string {
 }
 
 function InfoIcon() {
-  return (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>);
+  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>);
+}
+function PhoneIcon() {
+  return (<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z" /></svg>);
+}
+function PhoneSmallIcon() {
+  return (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z" /></svg>);
+}
+function BackIcon() {
+  return (<svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /><path d="M20 12H9" /></svg>);
 }
 function KnowledgeBaseIcon() {
-  return (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z" /><path d="M4 5.5v16M8 7h8M8 11h8M8 15h5" /></svg>);
+  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z" /><path d="M4 5.5v16M8 7h8M8 11h8M8 15h5" /></svg>);
 }
 function SendIcon() {
-  return (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" /></svg>);
+  return (<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" /></svg>);
 }
 function PaperclipIcon() {
   return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>);
 }
 function EmojiIcon() {
   return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><line x1="9" x2="9.01" y1="9" y2="9" /><line x1="15" x2="15.01" y1="9" y2="9" /></svg>);
+}
+function SlashIcon() {
+  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="m15 8-6 8" /></svg>);
+}
+function LockIcon() {
+  return (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>);
+}
+function DoubleCheckIcon() {
+  return (<svg width="16" height="12" viewBox="0 0 24 18" fill="none" stroke="#3b82f6" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m1 10 4 4L14 4" /><path d="m10 12 2 2L22 4" /></svg>);
+}
+function InternalNoteIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      width="19"
+      height="19"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M7 3h10l4 4v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h2Z" />
+      <path d="M17 3v5h4M8 12h8M8 16h5" />
+    </svg>
+  );
 }
 function StickerIcon() {
   return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 13.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h7.5" /><path d="M20 13h-5a2 2 0 0 0-2 2v5" /><path d="m20 13-7 7" /></svg>);

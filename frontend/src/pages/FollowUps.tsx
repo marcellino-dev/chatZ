@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { IconBar } from '../components/chat/IconBar';
-import { PageBackButton } from '../components/PageBackButton';
+import { WorkspaceHeader } from '../components/WorkspaceHeader';
 import { api, getErrorMessage } from '../lib/api';
 import type { FollowUp } from '../types';
 
@@ -123,37 +123,31 @@ export function FollowUps() {
       <IconBar />
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-5xl px-6 py-8">
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <PageBackButton />
-              <div>
-                <h1 className="text-2xl font-bold text-chatz-text">Follow-ups</h1>
-                <p className="text-sm text-chatz-text-muted">
-                  Lembretes das conversas que você agendou
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setLoading(true);
-                setIncludeClosed((value) => !value);
-              }}
-              className="rounded-chatz border border-chatz-border px-4 py-2 text-sm
-                         text-chatz-text hover:bg-chatz-surface-hover"
-            >
-              {includeClosed ? 'Ver pendentes' : 'Ver histórico'}
-            </button>
-          </div>
+          <WorkspaceHeader
+            section="Relacionamento"
+            title="Follow-ups"
+            description="Organize os retornos combinados e não deixe nenhuma conversa sem acompanhamento."
+            action={(
+              <button
+                type="button"
+                onClick={() => {
+                  setLoading(true);
+                  setIncludeClosed((value) => !value);
+                }}
+                className="w-full rounded-xl border border-chatz-border bg-white px-4 py-2.5 text-sm font-semibold text-chatz-text shadow-sm transition hover:border-chatz-primary-border hover:bg-chatz-primary-light hover:text-chatz-primary sm:w-auto"
+              >
+                {includeClosed ? 'Ver pendentes' : 'Ver histórico'}
+              </button>
+            )}
+          />
 
           {!includeClosed && overdueCount > 0 && (
             <div
               role="status"
-              className="mb-5 rounded-chatz border border-chatz-danger-border
-                         bg-chatz-danger-light px-4 py-3 text-sm text-chatz-danger"
+              className="mb-5 flex items-center gap-3 rounded-2xl border border-rose-200 bg-gradient-to-r from-rose-50 to-white px-4 py-4 text-sm text-rose-800 shadow-sm"
             >
-              Você tem {overdueCount} follow-up{overdueCount === 1 ? '' : 's'} vencido
-              {overdueCount === 1 ? '' : 's'}.
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-lg">!</span>
+              <span>Você tem <strong>{overdueCount} follow-up{overdueCount === 1 ? '' : 's'}</strong> vencido{overdueCount === 1 ? '' : 's'} e aguardando atenção.</span>
             </div>
           )}
 
@@ -198,7 +192,7 @@ export function FollowUps() {
                 return (
                   <article
                     key={followUp.id}
-                    className={`rounded-chatz-xl border bg-chatz-surface p-5 ${
+                    className={`rounded-2xl border bg-white p-5 shadow-sm transition-shadow hover:shadow-md ${
                       isOverdue
                         ? 'border-chatz-danger-border'
                         : 'border-chatz-border'
@@ -208,7 +202,7 @@ export function FollowUps() {
                       <div className="min-w-0 flex-1">
                         <div className="mb-2 flex flex-wrap items-center gap-2">
                           <span
-                            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                            className={`rounded-full px-3 py-1 text-xs font-bold ${
                               isOverdue
                                 ? 'bg-chatz-danger-light text-chatz-danger'
                                 : 'bg-chatz-primary-light text-chatz-primary'

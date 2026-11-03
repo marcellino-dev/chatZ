@@ -64,14 +64,14 @@ export function IconBar() {
       });
       items.push({
         to: '/performance',
-        label: 'Meu desempenho',
+        label: 'Desempenho',
         icon: <PerformanceIcon />,
       });
     }
     items.push(
       { to: '/knowledge-base', label: 'Base de conhecimento', icon: <KnowledgeBaseIcon /> },
       { to: '/contacts', label: 'Contatos', icon: <ContactsIcon /> },
-      { to: '/quick-replies', label: 'Respostas prontas', icon: <QuickReplyIcon /> }
+      { to: '/quick-replies', label: 'Respostas rápidas', icon: <QuickReplyIcon /> }
     );
   }
 
@@ -124,34 +124,42 @@ export function IconBar() {
 
   return (
     <aside
-      className="flex h-full w-[68px] shrink-0 flex-col border-r border-slate-800/70
-                 bg-[#07111b] bg-cover bg-center px-2 py-5 text-slate-200
-                 lg:w-[228px] lg:px-4"
-      style={{ backgroundImage: "url('/chatz_imagens_ptbr/barra-lateral.png')" }}
+      className="relative flex h-full w-[68px] shrink-0 flex-col overflow-hidden
+                 bg-[linear-gradient(180deg,#0a0f2e_0%,#0c1033_55%,#160f47_100%)]
+                 px-2 py-5 text-slate-200 lg:w-[200px] lg:px-4"
     >
+      {/* Arco decorativo do canto inferior esquerdo */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -bottom-16 -left-32 h-80 w-80 rounded-full
+                   bg-gradient-to-tr from-fuchsia-600 via-pink-500 to-transparent p-[6px] opacity-80"
+      >
+        <div className="h-full w-full rounded-full bg-gradient-to-br from-[#2a1a6e] via-[#1b1255] to-[#0c1033]" />
+      </div>
+
       <NavLink
         to="/chat"
-        className="mb-8 flex h-12 items-center justify-center gap-2.5 px-0 lg:justify-start lg:px-2"
+        className="relative z-10 mb-8 flex h-12 items-center justify-center gap-2.5 px-0 lg:justify-start lg:px-1"
         title="chatZ"
       >
-        <img src="/logo.jpg" alt="" className="h-9 w-9 rounded-lg object-cover" />
-        <span className="hidden font-display text-2xl font-extrabold tracking-tight text-white lg:inline">
+        <img src="/logo.jpg" alt="" className="h-10 w-10 rounded-xl object-cover" />
+        <span className="hidden font-display text-[28px] font-extrabold tracking-tight text-white lg:inline">
           chat<span className="text-chatz-gradient">Z</span>
         </span>
       </NavLink>
 
-      <nav className="flex-1 space-y-2" aria-label="Menu principal">
+      <nav className="relative z-10 flex-1 space-y-1.5 overflow-y-auto" aria-label="Menu principal">
         {items.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             className={({ isActive }) =>
-              `flex min-h-11 items-center justify-center gap-3 rounded-xl px-1 py-2.5 text-sm font-medium
-               lg:justify-start lg:px-3.5
+              `flex min-h-12 items-center justify-center gap-3 rounded-2xl px-1 py-2.5 text-[15px] font-medium
+               lg:justify-start lg:px-4
                transition-all ${
                  isActive
-                   ? 'bg-gradient-to-r from-[#e719b5] via-[#f43f8e] to-[#ff711d] text-white shadow-[0_6px_18px_rgba(231,25,181,0.28)]'
-                   : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                   ? 'bg-gradient-to-r from-fuchsia-600 via-rose-500 to-orange-500 text-white shadow-[0_8px_22px_rgba(244,63,94,0.35)]'
+                   : 'text-slate-200 hover:bg-white/10 hover:text-white'
                }`
             }
           >
@@ -167,67 +175,66 @@ export function IconBar() {
                 </span>
               ) : null}
             </span>
-            <span className="hidden min-w-0 flex-1 truncate lg:block">{item.label}</span>
+            <span className="hidden min-w-0 flex-1 leading-tight lg:block">{item.label}</span>
           </NavLink>
         ))}
       </nav>
 
-      <div className="mt-5 flex flex-col items-center justify-center gap-2 border-t border-white/10 pt-4 lg:flex-row lg:justify-start lg:gap-2">
-        <div className="min-w-0 flex-1">
+      <div className="relative z-10 mt-4 rounded-2xl border border-white/10 bg-white/5 p-1.5 backdrop-blur-sm lg:p-2.5">
+        <div className="flex flex-col items-center gap-1 lg:flex-row lg:items-center lg:gap-1">
+          <div className="min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={() => navigate('/settings')}
+              className="flex w-full min-w-0 items-center justify-center gap-2.5 rounded-xl p-0 text-left
+                         transition-colors hover:bg-white/10 lg:justify-start lg:p-1"
+              title="Abrir perfil e configurações"
+            >
+              <span className="relative shrink-0">
+                <ProfileAvatar
+                  name={user.name}
+                  pictureUrl={user.profilePictureUrl}
+                  sizeClass="h-9 w-9 lg:h-10 lg:w-10"
+                  textClass="text-xs"
+                />
+                <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-[#0c1033] ${statusColor}`} />
+              </span>
+              <span className="hidden min-w-0 flex-1 lg:block">
+                <span className="block truncate text-xs font-semibold text-white">{user.name}</span>
+              </span>
+            </button>
+            {user.role === 'AGENT' ? (
+              <select
+                aria-label="Status de atendimento"
+                value={status}
+                disabled={statusSaving}
+                onChange={(event) =>
+                  void handleStatusChange(event.target.value as AgentStatus)
+                }
+                className="mt-0.5 block w-full max-w-full cursor-pointer border-0 bg-transparent p-0 text-center text-[11px] text-slate-300 outline-none focus:text-white disabled:opacity-60 lg:ml-[52px] lg:w-auto lg:text-left"
+              >
+                <option value="ONLINE" className="bg-[#0c1033]">Online</option>
+                <option value="AWAY" className="bg-[#0c1033]">Ausente</option>
+                <option value="BUSY" className="bg-[#0c1033]">Ocupado</option>
+              </select>
+            ) : (
+              <span className="hidden text-[11px] text-slate-300 lg:ml-[52px] lg:block">{statusLabel}</span>
+            )}
+          </div>
           <button
             type="button"
-            onClick={() => navigate('/settings')}
-            className="flex w-full min-w-0 items-center justify-center gap-2.5 rounded-xl p-0 text-left
-                       lg:justify-start lg:p-2
-                       transition-colors hover:bg-white/10"
-            title="Abrir perfil e configurações"
+            onClick={handleLogout}
+            title="Sair"
+            aria-label="Sair"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg
+                       text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
           >
-            <span className="relative shrink-0">
-              <ProfileAvatar
-                name={user.name}
-                pictureUrl={user.profilePictureUrl}
-                sizeClass="h-8 w-8 lg:h-10 lg:w-10"
-                textClass="text-xs"
-              />
-              <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-[#07111b] ${statusColor}`} />
-            </span>
-            <span className="hidden min-w-0 flex-1 lg:block">
-              <span className="block truncate text-xs font-semibold text-white">{user.name}</span>
-            </span>
-            <span className="hidden text-lg leading-none text-slate-400 lg:block" aria-hidden="true">›</span>
+            <LogoutIcon />
           </button>
-          {user.role === 'AGENT' ? (
-            <select
-              aria-label="Status de atendimento"
-              value={status}
-              disabled={statusSaving}
-              onChange={(event) =>
-                void handleStatusChange(event.target.value as AgentStatus)
-              }
-              className="mt-1 block w-full max-w-full cursor-pointer border-0 bg-transparent p-0 text-center text-[10px] text-slate-400 outline-none focus:text-white disabled:opacity-60 lg:ml-[54px] lg:w-auto lg:text-left"
-            >
-              <option value="ONLINE" className="bg-[#07111b]">Online</option>
-              <option value="AWAY" className="bg-[#07111b]">Ausente</option>
-              <option value="BUSY" className="bg-[#07111b]">Ocupado</option>
-            </select>
-          ) : (
-            <span className="hidden text-[10px] text-slate-400 lg:ml-[54px] lg:block">{statusLabel}</span>
-          )}
         </div>
-        <button
-          type="button"
-          onClick={handleLogout}
-          title="Sair"
-          aria-label="Sair"
-          className="flex h-8 w-5 shrink-0 items-center justify-center rounded-lg
-                     lg:h-9 lg:w-9
-                     text-slate-400 transition-colors hover:bg-white/10 hover:text-white"
-        >
-          <LogoutIcon />
-        </button>
       </div>
       {statusError && (
-        <p role="alert" className="mt-2 px-2 text-[10px] text-rose-300">
+        <p role="alert" className="relative z-10 mt-2 px-2 text-[10px] text-rose-300">
           {statusError}
         </p>
       )}
@@ -237,7 +244,7 @@ export function IconBar() {
 
 function ChatIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     </svg>
   );
@@ -245,34 +252,33 @@ function ChatIcon() {
 
 function ContactsIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="9" cy="8" r="4" />
-      <path d="M3 21v-2a6 6 0 0 1 12 0v2M16 4.5a4 4 0 0 1 0 7M21 21v-2a6 6 0 0 0-3-5.2" />
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21v-1a7 7 0 0 1 7-7h2a7 7 0 0 1 7 7v1" />
     </svg>
   );
 }
 
 function QuickReplyIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z" />
-      <path d="m9 12 2 2 4-4" />
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M13 2 4 14h7l-1 8 9-12h-7z" />
     </svg>
   );
 }
 
 function KnowledgeBaseIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z" />
-      <path d="M4 5.5v16M8 7h8M8 11h8M8 15h5" />
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4" y="3" width="16" height="18" rx="2" />
+      <path d="M8 8h8M8 12h8M8 16h5" />
     </svg>
   );
 }
 
 function FollowUpIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <circle cx="12" cy="12" r="9" />
       <path d="M12 7v5l3 2" />
     </svg>
@@ -281,24 +287,29 @@ function FollowUpIcon() {
 
 function HistoryIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 12a9 9 0 1 0 2.64-6.36L3 8" />
-      <path d="M3 3v5h5M12 7v5l3 2" />
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M8 2v4M16 2v4M3 10h18" />
+      <path d="M21 12V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7" />
+      <circle cx="17" cy="17" r="4" />
+      <path d="M17 15v2l1 1" />
     </svg>
   );
 }
 
 function PerformanceIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 3v18h18M8 15l4-4 3 3 5-7" />
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 21h18" />
+      <rect x="4" y="12" width="4" height="9" rx="1" />
+      <rect x="10" y="6" width="4" height="15" rx="1" />
+      <rect x="16" y="9" width="4" height="12" rx="1" />
     </svg>
   );
 }
 
 function SectorIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4" />
     </svg>
   );
@@ -306,7 +317,7 @@ function SectorIcon() {
 
 function UsersIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M22 21v-2a4 4 0 0 0-3-3.87" />
       <circle cx="9" cy="7" r="4" />
       <path d="M16 3.13a4 4 0 0 1 0 7.75" />
@@ -316,7 +327,7 @@ function UsersIcon() {
 
 function SettingsIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <circle cx="12" cy="12" r="3" />
       <path d="m19.4 15 .1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.2a2 2 0 1 1-4 0V19a1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 12.1h-.2a2 2 0 1 1 0-4H3a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 9.9 1h.2a2 2 0 1 1 4 0v.2A1.7 1.7 0 0 0 17 2.4l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.2a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.6 2.9Z" />
     </svg>

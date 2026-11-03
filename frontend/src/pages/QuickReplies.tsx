@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, getErrorMessage } from '../lib/api';
 import { IconBar } from '../components/chat/IconBar';
-import { PageBackButton } from '../components/PageBackButton';
+import { WorkspaceHeader } from '../components/WorkspaceHeader';
 import type { QuickReply } from '../types';
 
 export function QuickReplies() {
@@ -78,32 +78,26 @@ export function QuickReplies() {
       <IconBar />
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-5xl mx-auto px-6 py-8">
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <PageBackButton />
-              <div>
-              <h1 className="text-2xl font-bold text-chatz-text">
-                Respostas prontas
-              </h1>
-              <p className="text-chatz-text-muted text-sm">
-                Compartilhe respostas com a equipe e use-as digitando / no chat.
-              </p>
-              </div>
-            </div>
-            <button
-              onClick={openCreate}
-              className="px-5 py-2.5 bg-chatz-primary hover:bg-chatz-primary-hover
-                         text-white font-medium rounded-lg transition-all"
-            >
-              + Nova resposta
-            </button>
-          </div>
+          <WorkspaceHeader
+            section="Produtividade"
+            title="Respostas prontas"
+            description="Padronize mensagens da equipe e envie respostas com mais agilidade direto pelo chat."
+            action={(
+              <button
+                onClick={openCreate}
+                className="w-full rounded-xl bg-chatz-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-chatz-primary-hover hover:shadow-md sm:w-auto"
+              >
+                + Nova resposta
+              </button>
+            )}
+          />
 
-          <div className="bg-chatz-primary-light border border-chatz-primary-border
-                          rounded-chatz p-4 mb-5 text-sm text-chatz-text">
-            Dica: comece a digitar <kbd className="px-1.5 py-0.5 bg-white
-              border border-chatz-border rounded font-mono">/</kbd> na conversa,
-            escolha uma resposta e personalize o texto antes de enviar.
+          <div className="mb-5 flex items-center gap-3 rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-white p-4 text-sm text-slate-700 shadow-sm">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-lg text-blue-700">⌘</span>
+            <span>
+              <strong className="text-slate-900">Atalho no chat:</strong> digite <kbd className="mx-1 rounded-md border border-blue-200 bg-white px-2 py-1 font-mono text-xs font-bold text-blue-700">/</kbd>
+              e escolha uma resposta. Você ainda pode personalizar o texto antes de enviar.
+            </span>
           </div>
 
           {error && (
@@ -137,8 +131,7 @@ export function QuickReplies() {
               {replies.map((reply) => (
                 <article
                   key={reply.id}
-                  className="bg-chatz-surface border border-chatz-border
-                             rounded-chatz-xl p-5"
+                  className="rounded-2xl border border-chatz-border bg-white p-5 shadow-sm transition-shadow hover:shadow-md"
                 >
                   <div className="flex flex-wrap justify-between gap-4">
                     <div className="min-w-0 flex-1">

@@ -29,7 +29,7 @@ export interface User {
   statusChangedAt?: string | null;
   soundEnabled?: boolean;
   desktopNotifications?: boolean;
-  notificationSound?: string;
+  notificationSound?: 'ding' | 'notification' | 'none';
   sector?: Pick<Sector, 'id' | 'name' | 'slug'> | null;
   createdAt: string;
 }

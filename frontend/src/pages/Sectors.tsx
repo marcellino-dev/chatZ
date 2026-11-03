@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSectorsStore } from '../stores/sectors';
 import { SectorModal } from '../components/SectorModal';
 import { IconBar } from '../components/chat/IconBar';
-import { PageBackButton } from '../components/PageBackButton';
+import { WorkspaceHeader } from '../components/WorkspaceHeader';
 import type { Sector } from '../types';
 
 export function Sectors() {
@@ -49,41 +49,34 @@ export function Sectors() {
       <IconBar />
       <main className="flex-1 overflow-y-auto">
       <div className="max-w-6xl mx-auto px-6 py-8">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <PageBackButton />
-          <div>
-          <h1 className="text-2xl font-bold text-chatz-text">Setores</h1>
-          <p className="text-chatz-muted text-sm">
-            Gerencie os setores de atendimento
-          </p>
-          </div>
-        </div>
-
-        <button
-          onClick={handleCreate}
-          className="px-5 py-2.5 bg-chatz-primary hover:bg-chatz-primary-hover
-                     text-white font-medium rounded-lg transition-all"
-        >
-          ➕ Novo setor
-        </button>
-      </div>
+      <WorkspaceHeader
+        section="Organização"
+        title="Setores"
+        description="Organize a equipe por áreas de atendimento e acompanhe a estrutura de cada setor."
+        action={(
+          <button
+            onClick={handleCreate}
+            className="w-full rounded-xl bg-chatz-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-chatz-primary-hover hover:shadow-md sm:w-auto"
+          >
+            + Novo setor
+          </button>
+        )}
+      />
 
       {loading && (
-        <div className="text-center py-16 text-chatz-muted">Carregando...</div>
+        <div className="rounded-2xl border border-chatz-border bg-white py-16 text-center text-sm text-chatz-text-muted shadow-sm">Carregando setores...</div>
       )}
 
       {error && (
-        <div className="bg-chatz-danger/10 border border-chatz-danger/30 text-chatz-danger
-                        rounded-lg px-4 py-3 mb-6">
+        <div role="alert" className="mb-6 rounded-xl border border-chatz-danger-border bg-chatz-danger-light px-4 py-3 text-sm text-chatz-danger">
           {error}
         </div>
       )}
 
       {!loading && sectors.length === 0 && (
-        <div className="text-center py-16 bg-chatz-card/50 border border-chatz-border
-                        border-dashed rounded-2xl">
-          <p className="text-chatz-muted mb-2">Nenhum setor cadastrado</p>
+        <div className="rounded-2xl border border-dashed border-chatz-border bg-white py-16 text-center shadow-sm">
+          <p className="mb-2 font-semibold text-chatz-text">Nenhum setor cadastrado</p>
+          <p className="mb-3 text-sm text-chatz-text-muted">Crie setores para organizar a distribuição dos atendimentos.</p>
           <button
             onClick={handleCreate}
             className="text-chatz-primary hover:text-chatz-primary-hover text-sm font-medium"
@@ -98,7 +91,7 @@ export function Sectors() {
           {sectors.map((sector) => (
             <div
               key={sector.id}
-              className={`bg-chatz-card border rounded-xl p-5 transition-all ${
+              className={`rounded-2xl border bg-white p-5 shadow-sm transition-all hover:shadow-md ${
                 sector.active
                   ? 'border-chatz-border hover:border-chatz-primary/50'
                   : 'border-chatz-border opacity-50'
@@ -111,22 +104,20 @@ export function Sectors() {
                       {sector.name}
                     </h3>
                     {!sector.active && (
-                      <span className="text-xs px-2 py-0.5 rounded-full
-                                       bg-chatz-muted/10 text-chatz-muted
-                                       border border-chatz-muted/30">
+                      <span className="rounded-full border border-chatz-border bg-chatz-surface-hover px-2 py-0.5 text-xs text-chatz-text-muted">
                         Desativado
                       </span>
                     )}
                   </div>
-                  <p className="text-chatz-muted text-xs font-mono mb-2">
+                  <p className="mb-2 font-mono text-xs text-chatz-text-subtle">
                     /{sector.slug}
                   </p>
                   {sector.description && (
-                    <p className="text-chatz-muted text-sm mb-3">
+                    <p className="mb-3 text-sm text-chatz-text-muted">
                       {sector.description}
                     </p>
                   )}
-                  <div className="flex gap-4 text-xs text-chatz-muted">
+                  <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-chatz-text-muted">
                     <span>
                       👥 {sector._count?.users ?? 0}{' '}
                       {sector._count?.users === 1 ? 'atendente' : 'atendentes'}
@@ -141,9 +132,7 @@ export function Sectors() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleEdit(sector)}
-                    className="px-3 py-1.5 bg-chatz-bg hover:bg-chatz-card-hover
-                               border border-chatz-border text-chatz-text
-                               text-xs font-medium rounded-lg transition-all"
+                    className="rounded-lg border border-chatz-border bg-white px-3 py-1.5 text-xs font-semibold text-chatz-text transition-all hover:bg-chatz-surface-hover"
                   >
                     Editar
                   </button>

@@ -12,6 +12,26 @@ export const updateStatusSchema = z.object({
   status: z.enum(['ONLINE', 'AWAY', 'BUSY', 'OFFLINE']),
 });
 
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, 'Senha atual obrigatória'),
+    newPassword: z.string().min(8, 'A nova senha deve ter no mínimo 8 caracteres').max(128),
+  })
+  .refine((data) => data.currentPassword !== data.newPassword, {
+    message: 'A nova senha deve ser diferente da senha atual',
+    path: ['newPassword'],
+  });
+
+export const updatePreferencesSchema = z
+  .object({
+    soundEnabled: z.boolean().optional(),
+    desktopNotifications: z.boolean().optional(),
+    notificationSound: z.enum(['ding', 'notification', 'none']).optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'Informe ao menos uma preferência para atualizar',
+  });
+
 // ==========================
 // CRIAR USUÁRIO (só ADMIN)
 // ==========================
@@ -37,3 +57,5 @@ export const createUserSchema = z
 export type LoginInput = z.infer<typeof loginSchema>;
 export type UpdateStatusInput = z.infer<typeof updateStatusSchema>;
 export type CreateUserInput = z.infer<typeof createUserSchema>;
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+export type UpdatePreferencesInput = z.infer<typeof updatePreferencesSchema>;

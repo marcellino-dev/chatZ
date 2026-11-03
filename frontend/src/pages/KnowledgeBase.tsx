@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { IconBar } from '../components/chat/IconBar';
-import { PageBackButton } from '../components/PageBackButton';
+import { WorkspaceHeader } from '../components/WorkspaceHeader';
 import { api, getErrorMessage } from '../lib/api';
 import { useAuthStore } from '../stores/auth';
 import type { KnowledgeArticle } from '../types';
@@ -79,44 +79,39 @@ export function KnowledgeBase() {
       <IconBar />
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-5xl px-6 py-8">
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <PageBackButton />
-              <div>
-                <h1 className="text-2xl font-bold text-chatz-text">Base de conhecimento</h1>
-                <p className="text-sm text-chatz-text-muted">
-                  Consulte orientações e informações para os atendimentos.
-                </p>
-              </div>
-            </div>
-            {isAdmin && (
+          <WorkspaceHeader
+            section="Central de conteúdo"
+            title="Base de conhecimento"
+            description="Encontre procedimentos, respostas e orientações para agilizar cada atendimento."
+            action={isAdmin ? (
               <button
                 type="button"
                 onClick={openCreate}
-                className="rounded-chatz bg-chatz-primary px-4 py-2.5 font-medium text-white
-                           transition-colors hover:bg-chatz-primary-hover"
+                className="w-full rounded-xl bg-chatz-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-chatz-primary-hover hover:shadow-md sm:w-auto"
               >
                 + Novo artigo
               </button>
-            )}
-          </div>
-
-          <label htmlFor="knowledge-search" className="sr-only">
-            Buscar na base de conhecimento
-          </label>
-          <input
-            id="knowledge-search"
-            type="search"
-            value={search}
-            onChange={(event) => {
-              setLoading(true);
-              setSearch(event.target.value);
-            }}
-            placeholder="Buscar por título, categoria ou conteúdo..."
-            className="mb-5 w-full rounded-chatz border border-chatz-border bg-chatz-surface
-                       px-4 py-3 text-sm text-chatz-text placeholder:text-chatz-text-subtle
-                       focus:border-chatz-primary focus:ring-2 focus:ring-chatz-primary/20"
+            ) : undefined}
           />
+
+          <div className="mb-5 rounded-2xl border border-chatz-border bg-white p-3 shadow-sm">
+            <label htmlFor="knowledge-search" className="sr-only">Buscar na base de conhecimento</label>
+            <div className="flex items-center gap-3 rounded-xl border border-chatz-border bg-chatz-surface-alt px-3">
+              <KnowledgeSearchIcon />
+              <input
+                id="knowledge-search"
+                type="search"
+                value={search}
+                onChange={(event) => {
+                  setLoading(true);
+                  setSearch(event.target.value);
+                }}
+                placeholder="Buscar por título, categoria ou conteúdo..."
+                className="w-full border-0 bg-transparent py-3 text-sm text-chatz-text outline-none placeholder:text-chatz-text-subtle"
+              />
+              {!loading && <span className="shrink-0 text-xs text-chatz-text-subtle">{articles.length} artigos</span>}
+            </div>
+          </div>
 
           {isAdmin && (
             <label className="mb-5 flex items-center gap-2 text-sm text-chatz-text-muted">
@@ -163,7 +158,7 @@ export function KnowledgeBase() {
               {articles.map((article) => (
                 <article
                   key={article.id}
-                  className="rounded-chatz-xl border border-chatz-border bg-chatz-surface p-5"
+                  className="rounded-2xl border border-chatz-border bg-white p-5 shadow-sm transition-shadow hover:shadow-md"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="min-w-0 flex-1">
@@ -205,7 +200,7 @@ export function KnowledgeBase() {
                   <details className="group mt-3">
                     <summary className="cursor-pointer text-sm font-medium text-chatz-primary
                                         hover:text-chatz-primary-hover">
-                      Consultar artigo
+                      <span className="inline-flex items-center gap-2">Consultar artigo <span aria-hidden="true" className="transition-transform group-open:rotate-180">⌄</span></span>
                     </summary>
                     <div className="mt-3 whitespace-pre-wrap border-t border-chatz-border
                                     pt-4 text-sm leading-6 text-chatz-text">
@@ -238,6 +233,15 @@ export function KnowledgeBase() {
         />
       )}
     </div>
+  );
+}
+
+function KnowledgeSearchIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4 shrink-0 text-chatz-text-subtle">
+      <circle cx="11" cy="11" r="7" />
+      <path strokeLinecap="round" d="m20 20-4-4" />
+    </svg>
   );
 }
 

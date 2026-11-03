@@ -41,6 +41,8 @@ router.put(
   requireRole('AGENT'),
   authController.updateStatus
 );
+router.put('/me/password', authMiddleware, authController.changePassword);
+router.patch('/me/preferences', authMiddleware, authController.updatePreferences);
 router.post(
   '/me/profile-picture',
   authMiddleware,

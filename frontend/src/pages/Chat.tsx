@@ -10,15 +10,29 @@ export function Chat() {
   const [infoOpen, setInfoOpen] = useState(false);
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-chatz-bg overflow-hidden">
-      <div className="flex-1 flex overflow-hidden">
+    <div className="flex h-[100dvh] w-screen flex-col overflow-hidden bg-[#f4f6fb]">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         <IconBar />
-        <ChatList />
-        <ChatWindow
-          onToggleInfo={() => setInfoOpen((v) => !v)}
-          infoOpen={infoOpen}
-        />
-        {infoOpen && id && <ChatInfo onClose={() => setInfoOpen(false)} />}
+        <div className={`${id ? 'hidden md:flex' : 'flex'} min-h-0 shrink-0`}>
+          <ChatList />
+        </div>
+        <div className={`${id ? 'flex' : 'hidden md:flex'} min-h-0 min-w-0 flex-1`}>
+          <ChatWindow
+            onToggleInfo={() => setInfoOpen((v) => !v)}
+            infoOpen={infoOpen}
+          />
+        </div>
+        {infoOpen && id && (
+          <>
+            <button
+              type="button"
+              aria-label="Fechar detalhes do contato"
+              onClick={() => setInfoOpen(false)}
+              className="fixed inset-0 z-20 bg-slate-950/30 md:hidden"
+            />
+            <ChatInfo onClose={() => setInfoOpen(false)} />
+          </>
+        )}
       </div>
     </div>
   );
