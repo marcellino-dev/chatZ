@@ -153,7 +153,7 @@ export async function getMyPerformance(
   from: Date,
   to: Date
 ) {
-  if (from >= to || to.getTime() - from.getTime() > 26 * 60 * 60 * 1000) {
+  if (from >= to || to.getTime() - from.getTime() > 32 * 24 * 60 * 60 * 1000) {
     throw new AppError('Período inválido', 400);
   }
 
@@ -191,4 +191,109 @@ export async function getMyPerformance(
       : null,
     ratingDistribution,
   };
+}
+
+function dateKeyInTimeZone(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+export async function getMyDailyPerformance(
+  agentId: string,
+  from: Date,
+  to: Date,
+  timeZone: string
+) {
+  if (from >= to || to.getTime() - from.getTime() > 32 * 24 * 60 * 60 * 1000) {
+    throw new AppError('Período inválido', 400);
+  }
+
+  const sessions = await prisma.agentTicketSession.findMany({
+    where: { agentId, assignedAt: { gte: from, lt: to } },
+    select: { assignedAt: true, endedAt: true },
+  });
+  const days = new Map<string, {
+    assignmentsStarted: number;
+    assignmentsCompleted: number;
+    activeAssignments: number;
+  }>();
+
+  for (const session of sessions) {
+    const key = dateKeyInTimeZone(session.assignedAt, timeZone);
+    const day = days.get(key) ?? {
+      assignmentsStarted: 0,
+      assignmentsCompleted: 0,
+      activeAssignments: 0,
+    };
+    day.assignmentsStarted += 1;
+    if (session.endedAt) day.assignmentsCompleted += 1;
+    else day.activeAssignments += 1;
+    days.set(key, day);
+  }
+
+  const startDate = dateKeyInTimeZone(from, timeZone);
+  const endDate = dateKeyInTimeZone(new Date(to.getTime() - 1), timeZone);
+  const results: Array<{
+    date: string;
+    assignmentsStarted: number;
+    assignmentsCompleted: number;
+    activeAssignments: number;
+  }> = [];
+  const cursor = new Date(`${startDate}T00:00:00.000Z`);
+  const lastDay = new Date(`${endDate}T00:00:00.000Z`);
+
+  while (cursor <= lastDay) {
+    const date = cursor.toISOString().slice(0, 10);
+    results.push({
+      date,
+      ...(days.get(date) ?? {
+        assignmentsStarted: 0,
+        assignmentsCompleted: 0,
+        activeAssignments: 0,
+      }),
+    });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return results;
+}
+
+export async function getMyRecentPerformance(agentId: string, limit: number) {
+  const sessions = await prisma.agentTicketSession.findMany({
+    where: { agentId },
+    orderBy: { assignedAt: 'desc' },
+    take: limit,
+    select: {
+      id: true,
+      assignedAt: true,
+      endedAt: true,
+      ticket: {
+        select: {
+          subject: true,
+          status: true,
+          client: { select: { name: true, profilePictureUrl: true } },
+        },
+      },
+    },
+  });
+  const now = new Date();
+
+  return sessions.map((session) => ({
+    id: session.id,
+    createdAt: session.assignedAt,
+    clientName: session.ticket.client.name,
+    clientProfilePictureUrl: session.ticket.client.profilePictureUrl,
+    subject: session.ticket.subject,
+    durationMs: Math.max(
+      0,
+      (session.endedAt ?? now).getTime() - session.assignedAt.getTime()
+    ),
+    status: session.ticket.status,
+  }));
 }

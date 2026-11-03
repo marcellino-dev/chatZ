@@ -146,6 +146,8 @@ const routes = [
   ['GET', '/follow-ups/mine', 401],
   ['GET', '/follow-ups/mine/overdue-count', 401],
   ['GET', '/performance/mine', 401],
+  ['GET', '/performance/mine/daily', 401],
+  ['GET', '/performance/mine/recent', 401],
   ['POST', '/follow-ups', 401],
   ['PATCH', '/follow-ups/test-follow-up', 401],
   ['POST', '/follow-ups/test-follow-up/complete', 401],
@@ -249,9 +251,42 @@ test('agent performance tracks assignment periods, limits metrics to the signed-
   assert.equal(metrics.ratingsReceived, 0);
   assert.deepEqual(metrics.ratingDistribution, { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 });
 
+  const dailyResponse = await fetch(
+    `${baseUrl}/performance/mine/daily?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}&timeZone=UTC`,
+    { headers: ownerHeaders },
+  );
+  assert.equal(dailyResponse.status, 200);
+  const dailyMetrics = await dailyResponse.json();
+  assert.equal(dailyMetrics.length, 1);
+  assert.equal(dailyMetrics[0].assignmentsStarted, 1);
+  assert.equal(dailyMetrics[0].assignmentsCompleted, 1);
+  assert.equal(dailyMetrics[0].activeAssignments, 0);
+
+  const recentResponse = await fetch(`${baseUrl}/performance/mine/recent?limit=5`, {
+    headers: ownerHeaders,
+  });
+  assert.equal(recentResponse.status, 200);
+  const recentActivity = await recentResponse.json();
+  assert.ok(recentActivity.some((activity) => activity.id === firstSession.id));
+  assert.equal(
+    recentActivity.find((activity) => activity.id === firstSession.id).subject,
+    'Atendimento para métricas'
+  );
+  assert.equal(
+    recentActivity.find((activity) => activity.id === firstSession.id).clientName,
+    fixture.client.name
+  );
+
+  const sevenDayFrom = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const sevenDayResponse = await fetch(
+    `${baseUrl}/performance/mine?from=${encodeURIComponent(sevenDayFrom.toISOString())}&to=${encodeURIComponent(to.toISOString())}`,
+    { headers: ownerHeaders },
+  );
+  assert.equal(sevenDayResponse.status, 200);
+
   const otherMetricsResponse = await fetch(
     `${baseUrl}/performance/mine?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`,
-    { headers: { authorization: `Bearer ${otherToken}` } },
+    { headers: ownerHeaders },
   );
   assert.equal((await otherMetricsResponse.json()).assignmentsStarted, 1);
 
