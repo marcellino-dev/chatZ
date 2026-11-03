@@ -2,16 +2,19 @@ import { z } from 'zod';
 
 const titleSchema = z.string().trim().min(2, 'Título muito curto').max(80);
 const contentSchema = z.string().trim().min(1, 'Mensagem obrigatória').max(4000);
+const categorySchema = z.string().trim().min(1).max(40).nullable();
 
 export const createQuickReplySchema = z.object({
   title: titleSchema,
   content: contentSchema,
+  category: categorySchema.optional(),
 });
 
 export const updateQuickReplySchema = z
   .object({
     title: titleSchema.optional(),
     content: contentSchema.optional(),
+    category: categorySchema.optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {
     message: 'Informe ao menos um campo para atualizar',

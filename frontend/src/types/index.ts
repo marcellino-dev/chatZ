@@ -157,6 +157,9 @@ export interface FollowUp {
     clientName: string;
     agentName: string | null;
     canOpen: boolean;
+    clientPhone: string | null;
+    clientProfilePictureUrl: string | null;
+    priority: TicketPriority;
   };
 }
 
@@ -199,16 +202,7 @@ export interface QuickReply {
   id: string;
   title: string;
   content: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface KnowledgeArticle {
-  id: string;
-  title: string;
-  category: string;
-  content: string;
-  active: boolean;
+  category: string | null;
   createdAt: string;
   updatedAt: string;
 }

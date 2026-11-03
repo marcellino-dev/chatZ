@@ -94,6 +94,7 @@ const routes = [
   ['GET', '/'],
   ['POST', '/auth/login', 400],
   ['GET', '/auth/me', 401],
+  ['PATCH', '/auth/me', 401],
   ['PUT', '/auth/me/status', 401],
   ['PUT', '/auth/me/password', 401],
   ['PATCH', '/auth/me/preferences', 401],
@@ -145,9 +146,6 @@ const routes = [
   ['GET', '/follow-ups/mine', 401],
   ['GET', '/follow-ups/mine/overdue-count', 401],
   ['GET', '/performance/mine', 401],
-  ['GET', '/knowledge-base', 401],
-  ['POST', '/knowledge-base', 401],
-  ['PATCH', '/knowledge-base/test-article', 401],
   ['POST', '/follow-ups', 401],
   ['PATCH', '/follow-ups/test-follow-up', 401],
   ['POST', '/follow-ups/test-follow-up/complete', 401],
@@ -177,85 +175,6 @@ test('all registered API routes respond with their expected access or validation
       assert.notEqual(response.status, 404);
     });
   }
-});
-
-test('knowledge base allows agents to read active articles and only admins to manage them', async () => {
-  const admin = await prisma.user.create({
-    data: {
-      name: 'Administrador da base',
-      role: 'ADMIN',
-      email: `knowledge-admin-${process.pid}@test.invalid`,
-    },
-  });
-  const agentToken = signToken({ sub: fixture.owner.id, role: 'AGENT' });
-  const adminToken = signToken({ sub: admin.id, role: 'ADMIN' });
-  const agentHeaders = {
-    authorization: `Bearer ${agentToken}`,
-    'content-type': 'application/json',
-  };
-  const adminHeaders = {
-    authorization: `Bearer ${adminToken}`,
-    'content-type': 'application/json',
-  };
-
-  const forbiddenCreate = await fetch(`${baseUrl}/knowledge-base`, {
-    method: 'POST',
-    headers: agentHeaders,
-    body: JSON.stringify({
-      title: 'Orientação teste',
-      category: 'Atendimento',
-      content: 'Conteúdo de consulta.',
-    }),
-  });
-  assert.equal(forbiddenCreate.status, 403);
-
-  const createResponse = await fetch(`${baseUrl}/knowledge-base`, {
-    method: 'POST',
-    headers: adminHeaders,
-    body: JSON.stringify({
-      title: 'Prazo de análise',
-      category: 'Financeiro',
-      content: 'O prazo de análise é de três dias úteis.',
-    }),
-  });
-  assert.equal(createResponse.status, 201);
-  const article = await createResponse.json();
-  assert.equal(article.active, true);
-
-  const searchResponse = await fetch(
-    `${baseUrl}/knowledge-base?q=${encodeURIComponent('três dias')}`,
-    { headers: agentHeaders },
-  );
-  assert.equal(searchResponse.status, 200);
-  assert.deepEqual((await searchResponse.json()).map((item) => item.id), [article.id]);
-
-  const forbiddenUpdate = await fetch(`${baseUrl}/knowledge-base/${article.id}`, {
-    method: 'PATCH',
-    headers: agentHeaders,
-    body: JSON.stringify({ content: 'Alteração não permitida.' }),
-  });
-  assert.equal(forbiddenUpdate.status, 403);
-
-  const archiveResponse = await fetch(`${baseUrl}/knowledge-base/${article.id}`, {
-    method: 'PATCH',
-    headers: adminHeaders,
-    body: JSON.stringify({ active: false }),
-  });
-  assert.equal(archiveResponse.status, 200);
-  assert.equal((await archiveResponse.json()).active, false);
-
-  const hiddenFromAgent = await fetch(`${baseUrl}/knowledge-base`, {
-    headers: agentHeaders,
-  });
-  assert.equal(hiddenFromAgent.status, 200);
-  assert.equal((await hiddenFromAgent.json()).some((item) => item.id === article.id), false);
-
-  const visibleToAdmin = await fetch(
-    `${baseUrl}/knowledge-base?includeArchived=true`,
-    { headers: adminHeaders },
-  );
-  assert.equal(visibleToAdmin.status, 200);
-  assert.equal((await visibleToAdmin.json()).some((item) => item.id === article.id), true);
 });
 
 test('agent performance tracks assignment periods, limits metrics to the signed-in agent, and captures WhatsApp ratings', async () => {
@@ -503,6 +422,72 @@ test('agents can update only their own status and admins cannot use the agent st
     body: JSON.stringify({ status: 'BUSY' }),
   });
   assert.equal(forbiddenResponse.status, 403);
+});
+
+test('users can update their own profile and duplicate contact details are rejected', async () => {
+  const user = await prisma.user.create({
+    data: {
+      name: 'Perfil original',
+      role: 'AGENT',
+      sectorId: fixture.sector.id,
+      email: `profile-${process.pid}@test.invalid`,
+      password: await bcrypt.hash('profile-password', 10),
+    },
+  });
+  const token = signToken({ sub: user.id, role: 'AGENT' });
+  const headers = {
+    authorization: `Bearer ${token}`,
+    'content-type': 'application/json',
+  };
+  const updateResponse = await fetch(`${baseUrl}/auth/me`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({
+      name: '  Nome atualizado  ',
+      email: `updated-${process.pid}@test.invalid`,
+      phone: '+55 (11) 99999-1111',
+      id: fixture.owner.id,
+      role: 'ADMIN',
+      sectorId: fixture.supportSector.id,
+    }),
+  });
+  assert.equal(updateResponse.status, 200);
+  const updatedUser = await updateResponse.json();
+  assert.equal(updatedUser.id, user.id);
+  assert.equal(updatedUser.name, 'Nome atualizado');
+  assert.equal(updatedUser.email, `updated-${process.pid}@test.invalid`);
+  assert.equal(updatedUser.phone, '+55 (11) 99999-1111');
+  assert.equal(updatedUser.role, 'AGENT');
+  assert.equal(updatedUser.sectorId, fixture.sector.id);
+  assert.equal('password' in updatedUser, false);
+
+  const duplicateEmailResponse = await fetch(`${baseUrl}/auth/me`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ email: fixture.owner.email }),
+  });
+  assert.equal(duplicateEmailResponse.status, 409);
+
+  const duplicatePhoneResponse = await fetch(`${baseUrl}/auth/me`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ phone: fixture.client.phone }),
+  });
+  assert.equal(duplicatePhoneResponse.status, 409);
+
+  const invalidProfileResponse = await fetch(`${baseUrl}/auth/me`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({ email: 'not-an-email' }),
+  });
+  assert.equal(invalidProfileResponse.status, 400);
+
+  const emptyProfileResponse = await fetch(`${baseUrl}/auth/me`, {
+    method: 'PATCH',
+    headers,
+    body: JSON.stringify({}),
+  });
+  assert.equal(emptyProfileResponse.status, 400);
 });
 
 test('users can change their password only after verifying the current password', async () => {
@@ -1467,6 +1452,7 @@ test('follow-ups are private to their creator and remain manageable after ticket
     data: {
       subject: 'Conversa com follow-up',
       status: 'IN_PROGRESS',
+      priority: 'HIGH',
       sectorId: fixture.sector.id,
       clientId: fixture.client.id,
       agentId: fixture.owner.id,
@@ -1486,6 +1472,9 @@ test('follow-ups are private to their creator and remain manageable after ticket
   const followUp = await createResponse.json();
   assert.equal(followUp.creatorId, fixture.owner.id);
   assert.equal(followUp.ticket.subject, ticket.subject);
+  assert.equal(followUp.ticket.priority, 'HIGH');
+  assert.equal(followUp.ticket.clientPhone, fixture.client.phone);
+  assert.equal(followUp.ticket.clientProfilePictureUrl, null);
   assert.equal(followUp.note, 'Confirmar se recebeu a proposta');
 
   const deniedCreate = await fetch(`${baseUrl}/follow-ups`, {
@@ -1560,6 +1549,8 @@ test('follow-ups are private to their creator and remain manageable after ticket
   const ownerFollowUps = await ownerListResponse.json();
   assert.equal(ownerFollowUps.length, 2);
   assert.ok(ownerFollowUps.every((item) => item.ticket.canOpen === false));
+  assert.ok(ownerFollowUps.every((item) => item.ticket.priority === 'HIGH'));
+  assert.ok(ownerFollowUps.every((item) => item.ticket.clientPhone === fixture.client.phone));
   const colleagueListResponse = await fetch(
     `${baseUrl}/follow-ups/mine?ticketId=${ticket.id}`,
     { headers: colleagueHeaders },
@@ -1890,10 +1881,12 @@ test('agents can create shared quick replies and manage them', async () => {
     body: JSON.stringify({
       title: 'Saudação',
       content: 'Olá! Como podemos ajudar?',
+      category: 'Boas-vindas',
     }),
   });
   assert.equal(createResponse.status, 201);
   const reply = await createResponse.json();
+  assert.equal(reply.category, 'Boas-vindas');
 
   const otherAgentToken = signToken({
     sub: fixture.otherAgent.id,
@@ -1908,13 +1901,18 @@ test('agents can create shared quick replies and manage them', async () => {
   const updateResponse = await fetch(`${baseUrl}/quick-replies/${reply.id}`, {
     method: 'PATCH',
     headers,
-    body: JSON.stringify({ content: 'Olá, {{nome}}! Como podemos ajudar?' }),
+    body: JSON.stringify({
+      content: 'Olá, {{nome}}! Como podemos ajudar?',
+      category: null,
+    }),
   });
   assert.equal(updateResponse.status, 200);
+  const updatedReply = await updateResponse.json();
   assert.equal(
-    (await updateResponse.json()).content,
+    updatedReply.content,
     'Olá, {{nome}}! Como podemos ajudar?'
   );
+  assert.equal(updatedReply.category, null);
 
   const invalidResponse = await fetch(`${baseUrl}/quick-replies`, {
     method: 'POST',

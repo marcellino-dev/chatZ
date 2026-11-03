@@ -3,6 +3,7 @@ import * as authService from './auth.service';
 import {
   loginSchema,
   createUserSchema,
+  updateProfileSchema,
   updateStatusSchema,
   changePasswordSchema,
   updatePreferencesSchema,
@@ -40,6 +41,20 @@ export async function me(
     return res.json(user);
   } catch (err) {
     return next(err);
+  }
+}
+
+export async function updateProfile(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const data = updateProfileSchema.parse(req.body);
+    const user = await authService.updateProfile(req.user!.id, data);
+    return res.json(user);
+  } catch (error) {
+    return next(error);
   }
 }
 

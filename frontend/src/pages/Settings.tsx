@@ -1,4 +1,11 @@
-import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type DragEvent,
+  type FormEvent,
+} from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSettingsStore } from '../stores/settings';
 import { useAuthStore } from '../stores/auth';
@@ -8,7 +15,7 @@ import { api, getErrorMessage } from '../lib/api';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 import { IconBar } from '../components/chat/IconBar';
 import { PageBackButton } from '../components/PageBackButton';
-import type { User } from '../types';
+import type { AgentStatus, User } from '../types';
 
 type Section =
   | 'profile'
@@ -20,17 +27,35 @@ type Section =
   | 'advanced';
 
 const SECTIONS: { key: Section; label: string; icon: React.ReactNode; description: string }[] = [
-  { key: 'profile', label: 'Perfil', icon: <UserIcon />, description: 'Nome, email, foto' },
-  { key: 'account', label: 'Conta', icon: <KeyIcon />, description: 'Segurança e dados' },
+  { key: 'profile', label: 'Perfil', icon: <UserIcon />, description: 'Suas informações pessoais' },
+  { key: 'account', label: 'Conta', icon: <KeyIcon />, description: 'Segurança e acesso' },
   { key: 'privacy', label: 'Privacidade', icon: <LockIcon />, description: 'Visibilidade das informações' },
-  { key: 'conversations', label: 'Conversas', icon: <ChatIcon />, description: 'Tema e preferências' },
+  { key: 'conversations', label: 'Conversas', icon: <ChatIcon />, description: 'Preferências de chat' },
   { key: 'notifications', label: 'Notificações', icon: <BellIcon />, description: 'Mensagens, tickets e sons' },
   { key: 'appearance', label: 'Aparência', icon: <PaletteIcon />, description: 'Tema e densidade' },
   { key: 'advanced', label: 'Avançado', icon: <SettingsIcon />, description: 'Opções avançadas' },
 ];
 
+// Classes compartilhadas dos inputs com ícone à esquerda (sem depender de CSS global).
+const FIELD_INPUT =
+  'w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-3 text-sm text-chatz-text ' +
+  'outline-none transition focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-500/20';
+
+const STATUS_STYLE: Record<AgentStatus, { label: string; badge: string; dot: string }> = {
+  ONLINE: { label: 'Online', badge: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
+  AWAY: { label: 'Ausente', badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
+  BUSY: { label: 'Ocupado', badge: 'bg-rose-100 text-rose-700', dot: 'bg-rose-500' },
+  OFFLINE: { label: 'Offline', badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
+};
+
+/* ======================================================================
+ * Página
+ * ==================================================================== */
+
 export function Settings() {
   const user = useAuthStore((s) => s.user);
+  const { theme, setTheme } = useSettingsStore();
+  const navigate = useNavigate();
   const [section, setSection] = useState<Section>('profile');
   const [permission, setPermission] = useState<NotificationPermission>(
     'Notification' in window ? Notification.permission : 'denied'
@@ -46,47 +71,83 @@ export function Settings() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-chatz-bg">
       <IconBar />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="relative flex shrink-0 items-center gap-4 overflow-hidden border-b border-chatz-border bg-white px-4 py-4 sm:px-6">
-          <div aria-hidden="true" className="pointer-events-none absolute -right-10 -top-20 h-40 w-40 rounded-full bg-[radial-gradient(circle,rgba(249,115,22,0.12),rgba(59,130,246,0.06)_48%,transparent_72%)]" />
-          <PageBackButton />
-          <div className="relative">
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-chatz-primary">Preferências pessoais</p>
-            <h1 className="font-display text-xl font-extrabold text-chatz-text sm:text-2xl">Configurações</h1>
-            <p className="text-xs text-chatz-text-muted">{user.name}</p>
+
+      <div className="relative flex min-w-0 flex-1 flex-col overflow-y-auto">
+        {/* Blob decorativo do canto superior direito */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-24 -top-32 h-80 w-[28rem] rounded-full
+                     bg-gradient-to-br from-orange-200/70 via-pink-200/60 to-fuchsia-200/30 blur-2xl"
+        />
+
+        {/* Header */}
+        <header className="relative flex shrink-0 items-start justify-between gap-4 px-4 pb-4 pt-6 sm:px-8">
+          <div className="flex items-start gap-3">
+            <PageBackButton />
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-fuchsia-600">Configurações</p>
+              <h1 className="font-display text-3xl font-extrabold text-chatz-text">Configurações</h1>
+              <p className="mt-1 text-sm text-chatz-text-muted">Personalize sua experiência no chatZ.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => navigate('/follow-ups')}
+              aria-label="Follow-ups"
+              className="relative flex h-11 w-11 items-center justify-center rounded-full bg-white
+                         text-slate-700 shadow-md transition hover:shadow-lg"
+            >
+              <BellIcon />
+            </button>
+            <button
+              type="button"
+              onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+              aria-label="Alternar tema"
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-white
+                         text-slate-700 shadow-md transition hover:shadow-lg"
+            >
+              <MoonIcon />
+            </button>
           </div>
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
-        <aside className="w-full shrink-0 overflow-x-auto border-b border-chatz-border bg-white md:w-72 md:overflow-y-auto md:overflow-x-hidden md:border-b-0 md:border-r">
-          <nav className="flex flex-row py-2 md:flex-col md:py-3">
-            {SECTIONS.map((s) => (
-              <button
-                key={s.key}
-                onClick={() => setSection(s.key)}
-                className={`flex min-w-[145px] items-start gap-3 border-b-2 px-4 py-2.5 text-left transition-all md:w-full md:min-w-0 md:border-b-0 md:border-l-4 md:px-5 md:py-3 ${
-                  section === s.key
-                    ? 'border-b-chatz-primary bg-chatz-primary-light md:border-b-transparent md:border-l-chatz-primary'
-                    : 'border-b-transparent hover:bg-chatz-surface-hover md:border-l-transparent'
-                }`}
-              >
-                <span className={section === s.key ? 'text-chatz-primary' : 'text-chatz-text-muted'}>
-                  {s.icon}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-medium ${section === s.key ? 'text-chatz-primary' : 'text-chatz-text'}`}>
-                    {s.label}
-                  </p>
-                  <p className="text-xs text-chatz-text-muted truncate">{s.description}</p>
-                </div>
-              </button>
-            ))}
-          </nav>
-        </aside>
+        {/* Corpo */}
+        <div className="relative flex flex-1 flex-col gap-6 px-4 pb-8 sm:px-8 md:flex-row md:items-start">
+          <aside className="w-full shrink-0 overflow-x-auto rounded-2xl border border-slate-100 bg-white p-2 shadow-sm md:w-80 md:overflow-visible">
+            <nav className="flex flex-row gap-1 md:flex-col">
+              {SECTIONS.map((s) => {
+                const active = section === s.key;
+                return (
+                  <button
+                    key={s.key}
+                    onClick={() => setSection(s.key)}
+                    className={`flex min-w-[190px] items-center gap-3 rounded-xl border-l-4 px-4 py-3.5 text-left transition-all md:w-full md:min-w-0 ${
+                      active
+                        ? 'border-l-fuchsia-600 bg-fuchsia-50'
+                        : 'border-l-transparent hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className={active ? 'text-fuchsia-600' : 'text-slate-500'}>{s.icon}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-sm font-semibold ${active ? 'text-fuchsia-600' : 'text-chatz-text'}`}>
+                        {s.label}
+                      </p>
+                      <p className="truncate text-xs text-chatz-text-muted">{s.description}</p>
+                    </div>
+                    <span className={`hidden md:block ${active ? 'text-fuchsia-600' : 'text-slate-400'}`}>
+                      <ChevronRightIcon />
+                    </span>
+                  </button>
+                );
+              })}
+            </nav>
+          </aside>
 
-        <main className="min-w-0 flex-1 overflow-y-auto bg-chatz-bg">
-          <div className="mx-auto max-w-3xl p-4 sm:p-8">
-            {section === 'profile' && <ProfileSection user={user} />}
+          <main className="min-w-0 flex-1">
+            {section === 'profile' && (
+              <ProfileSection user={user} onChangePassword={() => setSection('account')} />
+            )}
             {section === 'account' && <AccountSection />}
             {section === 'privacy' && <PrivacySection />}
             {section === 'conversations' && <ConversationsSection />}
@@ -98,35 +159,268 @@ export function Settings() {
             )}
             {section === 'appearance' && <AppearanceSection />}
             {section === 'advanced' && <AdvancedSection />}
-          </div>
-        </main>
-      </div>
+          </main>
+        </div>
       </div>
     </div>
   );
 }
 
-function ProfileSection({ user }: { user: User }) {
-  const setUser = useAuthStore((state) => state.setUser);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadingPicture, setUploadingPicture] = useState(false);
-  const [pictureError, setPictureError] = useState('');
+/* ======================================================================
+ * Perfil
+ * ==================================================================== */
 
-  async function handlePictureChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = '';
+function ProfileSection({ user, onChangePassword }: { user: User; onChangePassword: () => void }) {
+  return (
+    <div className="space-y-6">
+      <ProfileHero user={user} />
+      <div className="grid gap-6 lg:grid-cols-[1.35fr_1fr]">
+        <ProfileForm user={user} />
+        <div className="space-y-6">
+          <ProfilePhotoCard user={user} />
+          <SecurityCard onChangePassword={onChangePassword} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface ProfileStats {
+  totalConversations: number;
+  resolved: number;
+  averageTime: string; // ex.: "2h 18min"
+}
+
+function ProfileHero({ user }: { user: User }) {
+  const [stats, setStats] = useState<ProfileStats | null>(null);
+  const status = STATUS_STYLE[user.status ?? 'ONLINE'];
+  const roleLabel = user.role === 'ADMIN' ? 'Administrador' : 'Atendente';
+
+  useEffect(() => {
+    if (user.role !== 'AGENT') return;
+    let active = true;
+    api
+      // ⚠️ endpoint hipotético: ajuste para o que existir no seu backend
+      .get<ProfileStats>('/auth/me/stats')
+      .then(({ data }) => {
+        if (active) setStats(data);
+      })
+      .catch(() => {
+        if (active) setStats(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user.id, user.role]);
+
+  return (
+    <section className="relative overflow-hidden rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-20 -top-24 h-72 w-[26rem] rounded-full
+                   bg-gradient-to-br from-orange-300/50 via-pink-400/50 to-fuchsia-400/30 blur-2xl"
+      />
+      <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center">
+        <span className="relative shrink-0">
+          <ProfileAvatar
+            name={user.name}
+            pictureUrl={user.profilePictureUrl}
+            sizeClass="h-28 w-28"
+            textClass="text-4xl"
+          />
+          <span className={`absolute bottom-1 right-1 h-5 w-5 rounded-full border-4 border-white ${status.dot}`} />
+        </span>
+
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="font-display text-2xl font-extrabold text-chatz-text">{user.name}</h2>
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${status.badge}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
+              {status.label}
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-chatz-text-muted">
+            {roleLabel}
+            {user.sector ? ` de ${user.sector.name}` : ''}
+          </p>
+
+          {user.role === 'AGENT' && (
+            <dl className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-0 sm:divide-x sm:divide-slate-200">
+              <HeroStat
+                first
+                icon={<HeadsetIcon />}
+                label="Total de conversas"
+                value={stats ? stats.totalConversations.toLocaleString('pt-BR') : '—'}
+              />
+              <HeroStat
+                icon={<CheckCircleIcon />}
+                label="Resolvidas"
+                value={stats ? stats.resolved.toLocaleString('pt-BR') : '—'}
+              />
+              <HeroStat icon={<ClockIcon />} label="Tempo médio" value={stats?.averageTime ?? '—'} />
+            </dl>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function HeroStat({
+  icon,
+  label,
+  value,
+  first,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  first?: boolean;
+}) {
+  return (
+    <div className={`flex items-center gap-3 ${first ? 'sm:pr-4' : 'sm:px-4'}`}>
+      <span className="text-fuchsia-600">{icon}</span>
+      <div>
+        <dt className="text-xs text-chatz-text-muted">{label}</dt>
+        <dd className="text-xl font-extrabold text-chatz-text">{value}</dd>
+      </div>
+    </div>
+  );
+}
+
+function ProfileForm({ user }: { user: User }) {
+  const setUser = useAuthStore((s) => s.setUser);
+  const [name, setName] = useState(user.name);
+  const [email, setEmail] = useState(user.email ?? '');
+  const [phone, setPhone] = useState(user.phone ?? '');
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  const dirty =
+    name !== user.name || email !== (user.email ?? '') || phone !== (user.phone ?? '');
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage('');
+    setError('');
+    setSaving(true);
+    try {
+      const { data } = await api.patch<User>('/auth/me', {
+        name: name.trim(),
+        email: email.trim() || null,
+        phone: phone.trim() || null,
+      });
+      setUser(data);
+      setMessage('Alterações salvas.');
+    } catch (requestError) {
+      setError(getErrorMessage(requestError));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card className="">
+      <CardHeader
+        icon={<UserIcon />}
+        title="Informações do Perfil"
+        subtitle="Mantenha seus dados sempre atualizados."
+      />
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Field label="Nome" icon={<UserIcon />}>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            className={FIELD_INPUT}
+          />
+        </Field>
+        <Field label="Email" icon={<MailIcon />}>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className={FIELD_INPUT}
+          />
+        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Telefone" icon={<PhoneIcon />}>
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className={FIELD_INPUT}
+            />
+          </Field>
+          <Field label="Setor" icon={<BriefcaseIcon />}>
+            <input
+              value={user.sector?.name ?? '—'}
+              disabled
+              className={`${FIELD_INPUT} cursor-not-allowed opacity-70`}
+            />
+          </Field>
+        </div>
+
+        {error && <p role="alert" className="text-sm text-chatz-danger">{error}</p>}
+        {message && <p role="status" className="text-sm text-green-700">{message}</p>}
+
+        <button
+          type="submit"
+          disabled={saving || !dirty}
+          className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-fuchsia-600 to-orange-500
+                     px-6 py-3 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(217,70,239,0.3)]
+                     transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <SaveIcon />
+          {saving ? 'Salvando...' : 'Salvar alterações'}
+        </button>
+      </form>
+    </Card>
+  );
+}
+
+function Field({
+  label,
+  icon,
+  children,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-sm font-semibold text-chatz-text">{label}</span>
+      <span className="relative block">
+        <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500">
+          {icon}
+        </span>
+        {children}
+      </span>
+    </label>
+  );
+}
+
+function ProfilePhotoCard({ user }: { user: User }) {
+  const setUser = useAuthStore((s) => s.setUser);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [error, setError] = useState('');
+
+  async function uploadFile(file: File | undefined) {
     if (!file) return;
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-      setPictureError('Escolha uma imagem JPG, PNG ou WEBP.');
+      setError('Escolha uma imagem JPG, PNG ou WEBP.');
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
-      setPictureError('A imagem deve ter no máximo 5 MB.');
+      setError('A imagem deve ter no máximo 5 MB.');
       return;
     }
 
-    setUploadingPicture(true);
-    setPictureError('');
+    setUploading(true);
+    setError('');
     try {
       const body = new FormData();
       body.append('file', file);
@@ -134,89 +428,154 @@ function ProfileSection({ user }: { user: User }) {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setUser(data);
-    } catch (error) {
-      setPictureError(getErrorMessage(error));
+    } catch (e) {
+      setError(getErrorMessage(e));
     } finally {
-      setUploadingPicture(false);
+      setUploading(false);
     }
   }
 
-  async function handleRemovePicture() {
+  function handleChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    void uploadFile(file);
+  }
+
+  function handleDrop(event: DragEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    setDragging(false);
+    void uploadFile(event.dataTransfer.files?.[0]);
+  }
+
+  async function handleRemove() {
     if (!user.profilePictureUrl) return;
     if (!confirm('Remover sua foto de perfil?')) return;
 
-    setUploadingPicture(true);
-    setPictureError('');
+    setUploading(true);
+    setError('');
     try {
       const { data } = await api.delete<User>('/auth/me/profile-picture');
       setUser(data);
-    } catch (error) {
-      setPictureError(getErrorMessage(error));
+    } catch (e) {
+      setError(getErrorMessage(e));
     } finally {
-      setUploadingPicture(false);
+      setUploading(false);
     }
   }
 
   return (
-    <div>
-      <SectionTitle icon="👤" title="Perfil" description="Suas informações pessoais" />
-      <div className="flex items-center gap-4 mb-6">
-        <ProfileAvatar
-          name={user.name}
-          pictureUrl={user.profilePictureUrl}
-          sizeClass="w-20 h-20"
-          textClass="text-2xl"
-        />
-        <div>
-          <p className="text-lg font-semibold text-chatz-text">{user.name}</p>
-          <p className="text-sm text-chatz-text-muted">{user.role === 'ADMIN' ? '👑 Administrador' : '🎧 Atendente'}</p>
-          {user.sector && <p className="text-sm text-chatz-text-muted">🏢 {user.sector.name}</p>}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            className="hidden"
-            onChange={handlePictureChange}
+    <Card className="">
+      <CardHeader icon={<ImageIcon />} title="Foto do Perfil" subtitle="Use uma imagem profissional." />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={handleChange}
+      />
+
+      <div className="flex items-stretch gap-4">
+        <div className="relative flex shrink-0 items-center justify-center rounded-2xl bg-slate-50 p-3">
+          <ProfileAvatar
+            name={user.name}
+            pictureUrl={user.profilePictureUrl}
+            sizeClass="h-28 w-28"
+            textClass="text-4xl"
           />
-          <div className="mt-2 flex flex-wrap gap-2">
-            <button
-              type="button"
-              disabled={uploadingPicture}
-              onClick={() => fileInputRef.current?.click()}
-              className="rounded-chatz border border-chatz-primary-border px-3 py-1.5
-                         text-xs font-medium text-chatz-primary hover:bg-chatz-primary-light
-                         disabled:opacity-50"
-            >
-              {uploadingPicture ? 'Enviando foto...' : user.profilePictureUrl ? 'Alterar foto' : 'Adicionar foto'}
-            </button>
-            {user.profilePictureUrl && (
-              <button
-                type="button"
-                disabled={uploadingPicture}
-                onClick={handleRemovePicture}
-                className="rounded-chatz border border-chatz-danger-border px-3 py-1.5
-                           text-xs font-medium text-chatz-danger hover:bg-chatz-danger-light
-                           disabled:opacity-50"
-              >
-                Remover foto
-              </button>
-            )}
-          </div>
-          {pictureError && (
-            <p role="alert" className="text-xs text-chatz-danger mt-2">
-              {pictureError}
-            </p>
-          )}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            aria-label="Alterar foto"
+            className="absolute bottom-2 right-2 flex h-9 w-9 items-center justify-center rounded-full
+                       bg-white text-slate-700 shadow-md transition hover:shadow-lg disabled:opacity-50"
+          >
+            <PencilIcon />
+          </button>
         </div>
+
+        <button
+          type="button"
+          disabled={uploading}
+          onClick={() => fileInputRef.current?.click()}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+          className={`flex min-w-0 flex-1 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed
+                      p-4 text-center transition disabled:opacity-50 ${
+                        dragging
+                          ? 'border-fuchsia-500 bg-fuchsia-50'
+                          : 'border-slate-300 hover:border-fuchsia-400'
+                      }`}
+        >
+          <span className="text-fuchsia-600">
+            <CloudUploadIcon />
+          </span>
+          <span className="text-sm text-chatz-text-muted">
+            {uploading ? 'Enviando foto...' : 'Arraste uma imagem aqui ou clique para selecionar'}
+          </span>
+          <span className="text-[11px] text-slate-400">JPG, PNG, WEBP • Máx. 5MB</span>
+        </button>
       </div>
-      <InfoRow label="Nome" value={user.name} />
-      <InfoRow label="Email" value={user.email || '—'} />
-      <InfoRow label="Telefone" value={user.phone || '—'} />
-      <InfoRow label="Setor" value={user.sector?.name || '—'} />
-      <InfoRow label="ID" value={user.id} mono />
-    </div>
+
+      {user.profilePictureUrl && (
+        <button
+          type="button"
+          onClick={handleRemove}
+          disabled={uploading}
+          className="mt-3 rounded-full border border-chatz-danger-border px-3 py-1.5 text-xs font-medium
+                     text-chatz-danger hover:bg-chatz-danger-light disabled:opacity-50"
+        >
+          Remover foto
+        </button>
+      )}
+      {error && (
+        <p role="alert" className="mt-2 text-xs text-chatz-danger">
+          {error}
+        </p>
+      )}
+    </Card>
   );
 }
+
+function SecurityCard({ onChangePassword }: { onChangePassword: () => void }) {
+  return (
+    <Card className="">
+      <CardHeader
+        icon={<ShieldIcon />}
+        title="Segurança da Conta"
+        subtitle="Mantenha sua conta sempre segura."
+      />
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+            <ShieldCheckIcon />
+          </span>
+          <div>
+            <p className="text-sm font-semibold text-chatz-text">Proteja seu acesso</p>
+            <p className="text-xs text-chatz-text-muted">Troque a senha periodicamente.</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onChangePassword}
+          className="inline-flex shrink-0 items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2
+                     text-sm font-semibold text-fuchsia-700 transition hover:bg-fuchsia-50"
+        >
+          <LockIcon />
+          Alterar senha
+        </button>
+      </div>
+    </Card>
+  );
+}
+
+/* ======================================================================
+ * Conta
+ * ==================================================================== */
 
 function AccountSection() {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -281,6 +640,10 @@ function AccountSection() {
   );
 }
 
+/* ======================================================================
+ * Privacidade
+ * ==================================================================== */
+
 function PrivacySection() {
   const { hidePhone, hideEmail, setHidePhone, setHideEmail } = useSettingsStore();
   return (
@@ -295,6 +658,10 @@ function PrivacySection() {
   );
 }
 
+/* ======================================================================
+ * Conversas
+ * ==================================================================== */
+
 function ConversationsSection() {
   return (
     <div>
@@ -307,6 +674,10 @@ function ConversationsSection() {
     </div>
   );
 }
+
+/* ======================================================================
+ * Notificações
+ * ==================================================================== */
 
 function NotificationsSection({
   permission,
@@ -433,6 +804,10 @@ function NotificationsSection({
   );
 }
 
+/* ======================================================================
+ * Aparência
+ * ==================================================================== */
+
 function AppearanceSection() {
   const { theme, density, setTheme, setDensity } = useSettingsStore();
   return (
@@ -476,9 +851,41 @@ function AppearanceSection() {
   );
 }
 
+/* ======================================================================
+ * Avançado
+ * ==================================================================== */
+
 function AdvancedSection() {
   const { reset } = useSettingsStore();
+  const user = useAuthStore((state) => state.user);
+  const setUser = useAuthStore((state) => state.setUser);
   const navigate = useNavigate();
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState('');
+  const [resetMessage, setResetMessage] = useState('');
+
+  async function resetSettings() {
+    if (!user || resetting || !confirm('Resetar todas as configurações?')) return;
+
+    setResetting(true);
+    setResetError('');
+    setResetMessage('');
+    try {
+      const { data } = await api.patch<User>('/auth/me/preferences', {
+        desktopNotifications: true,
+        soundEnabled: true,
+        notificationSound: 'ding',
+      });
+      setUser(data);
+      reset();
+      setResetMessage('Configurações restauradas para os valores padrão.');
+    } catch (error) {
+      setResetError(getErrorMessage(error));
+    } finally {
+      setResetting(false);
+    }
+  }
+
   return (
     <div>
       <SectionTitle icon="⚙️" title="Avançado" description="Opções avançadas do sistema" />
@@ -489,17 +896,16 @@ function AdvancedSection() {
             <p className="text-xs text-chatz-text-muted">Volta todas as opções ao padrão</p>
           </div>
           <button
-            onClick={() => {
-              if (confirm('Resetar todas as configurações?')) {
-                reset();
-                alert('Configurações resetadas');
-              }
-            }}
-            className="px-4 py-2 rounded-chatz bg-chatz-danger text-white text-sm font-semibold hover:bg-red-600 transition-all"
+            type="button"
+            onClick={() => void resetSettings()}
+            disabled={resetting}
+            className="px-4 py-2 rounded-chatz bg-chatz-danger text-white text-sm font-semibold hover:bg-red-600 transition-all disabled:cursor-wait disabled:opacity-50"
           >
-            Resetar
+            {resetting ? 'Restaurando...' : 'Resetar'}
           </button>
         </div>
+        {resetError && <p role="alert" className="mt-3 text-sm text-chatz-danger">{resetError}</p>}
+        {resetMessage && <p role="status" className="mt-3 text-sm text-green-700">{resetMessage}</p>}
       </Card>
       <Card>
         <div className="flex items-center justify-between gap-4">
@@ -529,6 +935,10 @@ function AdvancedSection() {
   );
 }
 
+/* ======================================================================
+ * Componentes de apoio
+ * ==================================================================== */
+
 function SectionTitle({ icon, title, description }: { icon: string; title: string; description: string }) {
   return (
     <div className="mb-6">
@@ -541,8 +951,24 @@ function SectionTitle({ icon, title, description }: { icon: string; title: strin
   );
 }
 
-function Card({ children }: { children: React.ReactNode }) {
-  return <div className="bg-chatz-surface border border-chatz-border rounded-chatz-md p-5 mb-4">{children}</div>;
+function Card({ children, className = 'mb-4' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`rounded-2xl border border-slate-100 bg-chatz-surface p-5 shadow-sm ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+function CardHeader({ icon, title, subtitle }: { icon: React.ReactNode; title: string; subtitle: string }) {
+  return (
+    <div className="mb-5 flex items-start gap-3">
+      <span className="mt-0.5 text-fuchsia-700">{icon}</span>
+      <div>
+        <h3 className="text-lg font-bold text-chatz-text">{title}</h3>
+        <p className="text-sm text-chatz-text-muted">{subtitle}</p>
+      </div>
+    </div>
+  );
 }
 
 function Divider() {
@@ -579,33 +1005,82 @@ function ToggleRow({
   );
 }
 
-function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-4 py-2 border-b border-chatz-border last:border-0">
-      <span className="text-sm text-chatz-text-muted">{label}</span>
-      <span className={`text-sm text-chatz-text font-medium text-right truncate ${mono ? 'font-mono text-xs' : ''}`}>{value}</span>
-    </div>
-  );
-}
+/* ======================================================================
+ * Ícones
+ * ==================================================================== */
+
+const svgProps = {
+  width: 20,
+  height: 20,
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 2,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+  'aria-hidden': true,
+} as const;
 
 function UserIcon() {
-  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>);
+  return (<svg {...svgProps}><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>);
 }
 function KeyIcon() {
-  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/></svg>);
+  return (<svg {...svgProps}><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/></svg>);
 }
 function LockIcon() {
-  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>);
+  return (<svg {...svgProps}><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>);
 }
 function ChatIcon() {
-  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>);
+  return (<svg {...svgProps}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>);
 }
 function BellIcon() {
-  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>);
+  return (<svg {...svgProps}><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>);
 }
 function PaletteIcon() {
-  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>);
+  return (<svg {...svgProps}><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>);
 }
 function SettingsIcon() {
-  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>);
+  return (<svg {...svgProps}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>);
+}
+function ChevronRightIcon() {
+  return (<svg {...svgProps} width={18} height={18}><path d="m9 18 6-6-6-6" /></svg>);
+}
+function MoonIcon() {
+  return (<svg {...svgProps}><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" /></svg>);
+}
+function MailIcon() {
+  return (<svg {...svgProps}><rect width="20" height="16" x="2" y="4" rx="2" /><path d="m22 7-10 6L2 7" /></svg>);
+}
+function PhoneIcon() {
+  return (<svg {...svgProps}><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z" /></svg>);
+}
+function BriefcaseIcon() {
+  return (<svg {...svgProps}><rect width="20" height="14" x="2" y="7" rx="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /></svg>);
+}
+function SaveIcon() {
+  return (<svg {...svgProps}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" /><path d="M17 21v-8H7v8M7 3v5h8" /></svg>);
+}
+function ImageIcon() {
+  return (<svg {...svgProps}><rect width="18" height="18" x="3" y="3" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" /></svg>);
+}
+function PencilIcon() {
+  return (<svg {...svgProps} width={16} height={16}><path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5Z" /></svg>);
+}
+function CloudUploadIcon() {
+  return (<svg {...svgProps} width={40} height={40} strokeWidth={1.6}><path d="M4 14.9A7 7 0 1 1 15.7 8h1.8a4.5 4.5 0 0 1 2.5 8.2" /><path d="M12 12v9M8 16l4-4 4 4" /></svg>);
+}
+function ShieldIcon() {
+  return (<svg {...svgProps}><path d="M20 13c0 5-3.5 7.5-7.7 9a1 1 0 0 1-.6 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1Z" /></svg>);
+}
+function ShieldCheckIcon() {
+  return (<svg {...svgProps} width={26} height={26}><path d="M20 13c0 5-3.5 7.5-7.7 9a1 1 0 0 1-.6 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1Z" /><path d="m9 12 2 2 4-4" /></svg>);
+}
+function HeadsetIcon() {
+  return (<svg {...svgProps} width={24} height={24}><path d="M3 14v-2a9 9 0 0 1 18 0v2" /><path d="M21 16a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 2ZM3 16a2 2 0 0 0 2 2h1v-6H5a2 2 0 0 0-2 2Z" /></svg>);
+}
+function CheckCircleIcon() {
+  return (<svg {...svgProps} width={24} height={24}><circle cx="12" cy="12" r="9" /><path d="m8.5 12 2.5 2.5 4.5-5" /></svg>);
+}
+function ClockIcon() {
+  return (<svg {...svgProps} width={24} height={24}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>);
 }

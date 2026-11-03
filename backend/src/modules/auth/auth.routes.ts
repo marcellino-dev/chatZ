@@ -35,6 +35,7 @@ router.post('/login', authController.login);
 // AUTENTICADAS
 // ==========================
 router.get('/me', authMiddleware, authController.me);
+router.patch('/me', authMiddleware, authController.updateProfile);
 router.put(
   '/me/status',
   authMiddleware,

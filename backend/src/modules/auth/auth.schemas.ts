@@ -12,6 +12,30 @@ export const updateStatusSchema = z.object({
   status: z.enum(['ONLINE', 'AWAY', 'BUSY', 'OFFLINE']),
 });
 
+const profileEmailSchema = z
+  .string()
+  .trim()
+  .email('Email inválido')
+  .toLowerCase()
+  .nullable();
+const profilePhoneSchema = z
+  .string()
+  .trim()
+  .max(25, 'Telefone muito longo')
+  .regex(/^\+?[\d\s().-]+$/, 'Telefone inválido')
+  .transform((value) => value || null)
+  .nullable();
+
+export const updateProfileSchema = z
+  .object({
+    name: z.string().trim().min(2, 'Nome muito curto').max(80).optional(),
+    email: profileEmailSchema.optional(),
+    phone: profilePhoneSchema.optional(),
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'Informe ao menos um campo para atualizar',
+  });
+
 export const changePasswordSchema = z
   .object({
     currentPassword: z.string().min(1, 'Senha atual obrigatória'),
@@ -56,6 +80,7 @@ export const createUserSchema = z
 // ==========================
 export type LoginInput = z.infer<typeof loginSchema>;
 export type UpdateStatusInput = z.infer<typeof updateStatusSchema>;
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type UpdatePreferencesInput = z.infer<typeof updatePreferencesSchema>;

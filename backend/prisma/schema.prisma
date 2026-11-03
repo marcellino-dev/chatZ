@@ -140,25 +140,12 @@ model QuickReply {
   id        String   @id @default(cuid())
   title     String
   content   String
+  category  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([title])
   @@map("quick_replies")
-}
-
-model KnowledgeArticle {
-  id        String   @id @default(cuid())
-  title     String
-  category  String
-  content   String
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([active, category])
-  @@index([title])
-  @@map("knowledge_articles")
 }
 
 // ==========================

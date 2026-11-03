@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuthStore } from '../../stores/auth';
 import { ProfileAvatar } from '../ProfileAvatar';
 import { api } from '../../lib/api';
@@ -12,12 +12,34 @@ interface NavItem {
   badge?: number;
 }
 
+const COLLAPSED_KEY = 'chatz-sidebar-collapsed';
+
+const STATUS_INFO: Record<AgentStatus, { label: string; dot: string }> = {
+  ONLINE: { label: 'Online', dot: 'bg-emerald-500' },
+  AWAY: { label: 'Ausente', dot: 'bg-amber-400' },
+  BUSY: { label: 'Ocupado', dot: 'bg-rose-500' },
+  OFFLINE: { label: 'Offline', dot: 'bg-slate-400' },
+};
+
+function readCollapsed() {
+  try {
+    const stored = localStorage.getItem(COLLAPSED_KEY);
+    if (stored !== null) return stored === '1';
+  } catch {
+    // localStorage indisponível: usa o padrão abaixo
+  }
+  return typeof window !== 'undefined' && window.innerWidth < 1024;
+}
+
 export function IconBar() {
   const navigate = useNavigate();
   const { user, logout, updateStatus } = useAuthStore();
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState('');
   const [overdueFollowUps, setOverdueFollowUps] = useState(0);
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!user || (user.role !== 'ADMIN' && user.role !== 'AGENT')) return;
@@ -42,6 +64,25 @@ export function IconBar() {
       window.clearInterval(interval);
     };
   }, [user]);
+
+  // Fecha o menu do usuário ao clicar fora ou apertar Esc
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handleClick(event: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') setMenuOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [menuOpen]);
 
   if (!user) return null;
 
@@ -69,7 +110,6 @@ export function IconBar() {
       });
     }
     items.push(
-      { to: '/knowledge-base', label: 'Base de conhecimento', icon: <KnowledgeBaseIcon /> },
       { to: '/contacts', label: 'Contatos', icon: <ContactsIcon /> },
       { to: '/quick-replies', label: 'Respostas rápidas', icon: <QuickReplyIcon /> }
     );
@@ -82,13 +122,27 @@ export function IconBar() {
     );
   }
 
-  items.push({ to: '/settings', label: 'Configurações', icon: <SettingsIcon /> });
+  const settingsItem: NavItem = { to: '/settings', label: 'Configurações', icon: <SettingsIcon /> };
+
+  function toggleCollapsed() {
+    setCollapsed((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem(COLLAPSED_KEY, next ? '1' : '0');
+      } catch {
+        // ignora: a preferência só não será lembrada
+      }
+      return next;
+    });
+    setMenuOpen(false);
+  }
 
   async function handleStatusChange(status: AgentStatus) {
     setStatusSaving(true);
     setStatusError('');
     try {
       await updateStatus(status);
+      setMenuOpen(false);
     } catch {
       setStatusError('Não foi possível atualizar seu status.');
     } finally {
@@ -97,6 +151,7 @@ export function IconBar() {
   }
 
   async function handleLogout() {
+    setMenuOpen(false);
     try {
       await logout();
     } catch {
@@ -109,60 +164,211 @@ export function IconBar() {
   }
 
   const status = user.status ?? 'ONLINE';
-  const statusLabel = {
-    ONLINE: 'Online',
-    AWAY: 'Ausente',
-    BUSY: 'Ocupado',
-    OFFLINE: 'Offline',
-  }[status];
-  const statusColor = {
-    ONLINE: 'bg-emerald-400',
-    AWAY: 'bg-amber-400',
-    BUSY: 'bg-rose-400',
-    OFFLINE: 'bg-slate-400',
-  }[status];
+  const statusInfo = STATUS_INFO[status];
 
   return (
     <aside
-      className="relative flex h-full w-[68px] shrink-0 flex-col overflow-hidden
-                 bg-[linear-gradient(180deg,#0a0f2e_0%,#0c1033_55%,#160f47_100%)]
-                 px-2 py-5 text-slate-200 lg:w-[200px] lg:px-4"
+      className={`relative h-full shrink-0 p-3 transition-[width] duration-200 ${
+        collapsed ? 'w-[92px]' : 'w-[264px]'
+      }`}
     >
-      {/* Arco decorativo do canto inferior esquerdo */}
       <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -bottom-16 -left-32 h-80 w-80 rounded-full
-                   bg-gradient-to-tr from-fuchsia-600 via-pink-500 to-transparent p-[6px] opacity-80"
+        className={`relative flex h-full flex-col rounded-[2rem] border border-white
+                    bg-gradient-to-b from-white via-[#faf8ff] to-[#f3f0ff] py-5
+                    shadow-[0_10px_40px_rgba(88,28,135,0.14)] ring-1 ring-violet-100
+                    ${collapsed ? 'px-2' : 'px-4'}`}
       >
-        <div className="h-full w-full rounded-full bg-gradient-to-br from-[#2a1a6e] via-[#1b1255] to-[#0c1033]" />
-      </div>
+        {/* Manchas decorativas (recortadas no formato do card) */}
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]">
+          <div className="absolute -right-24 -top-24 h-44 w-44 rounded-full bg-gradient-to-br from-violet-300/50 to-transparent" />
+          <div className="absolute -right-10 -top-16 h-40 w-40 rounded-full bg-gradient-to-br from-fuchsia-400/60 via-pink-400/60 to-orange-300/70" />
+          <div className="absolute -bottom-20 left-4 h-36 w-44 rounded-full bg-gradient-to-t from-violet-400/50 to-transparent" />
+          <div className="absolute -bottom-16 -right-8 h-36 w-40 rounded-full bg-gradient-to-tl from-orange-400/80 via-pink-400/60 to-transparent" />
+        </div>
 
-      <NavLink
-        to="/chat"
-        className="relative z-10 mb-8 flex h-12 items-center justify-center gap-2.5 px-0 lg:justify-start lg:px-1"
-        title="chatZ"
-      >
-        <img src="/logo.jpg" alt="" className="h-10 w-10 rounded-xl object-cover" />
-        <span className="hidden font-display text-[28px] font-extrabold tracking-tight text-white lg:inline">
-          chat<span className="text-chatz-gradient">Z</span>
-        </span>
-      </NavLink>
-
-      <nav className="relative z-10 flex-1 space-y-1.5 overflow-y-auto" aria-label="Menu principal">
-        {items.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={({ isActive }) =>
-              `flex min-h-12 items-center justify-center gap-3 rounded-2xl px-1 py-2.5 text-[15px] font-medium
-               lg:justify-start lg:px-4
-               transition-all ${
-                 isActive
-                   ? 'bg-gradient-to-r from-fuchsia-600 via-rose-500 to-orange-500 text-white shadow-[0_8px_22px_rgba(244,63,94,0.35)]'
-                   : 'text-slate-200 hover:bg-white/10 hover:text-white'
-               }`
-            }
+        {/* Logo + botão de recolher */}
+        <div
+          className={`relative z-10 mb-8 flex items-center ${
+            collapsed ? 'flex-col gap-3' : 'justify-between gap-2 px-1'
+          }`}
+        >
+          <NavLink to="/chat" title="chatZ" className="flex items-center gap-3">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white shadow-[0_6px_18px_rgba(124,58,237,0.15)]">
+              <img src="/logo.jpg" alt="" className="h-10 w-10 rounded-xl object-cover" />
+            </span>
+            {!collapsed && (
+              <span className="font-display text-[28px] font-extrabold tracking-tight text-[#1e1b4b]">
+                chat<span className="text-chatz-gradient">Z</span>
+              </span>
+            )}
+          </NavLink>
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}
+            aria-expanded={!collapsed}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-violet-100
+                       bg-white/80 text-[#1e1b4b] shadow-sm transition hover:bg-white"
           >
+            <span className={`transition-transform ${collapsed ? 'rotate-180' : ''}`}>
+              <ChevronLeftIcon />
+            </span>
+          </button>
+        </div>
+
+        {/* Navegação principal */}
+        <nav className="relative z-10 min-h-0 flex-1 overflow-y-auto" aria-label="Menu principal">
+          <ul className="space-y-1.5">
+            {items.map((item) => (
+              <SidebarLink key={item.to} item={item} collapsed={collapsed} />
+            ))}
+          </ul>
+        </nav>
+
+        {/* Divisor + Configurações */}
+        <div className="relative z-10 mt-3">
+          <div className="mx-3 mb-3 h-px bg-violet-200/70" />
+          <ul>
+            <SidebarLink item={settingsItem} collapsed={collapsed} showChevron />
+          </ul>
+        </div>
+
+        {/* Cartão do usuário */}
+        <div ref={userMenuRef} className="relative z-10 mt-4">
+          {menuOpen && (
+            <div
+              role="menu"
+              className="absolute bottom-full left-0 z-50 mb-2 w-full min-w-[14rem] rounded-2xl border border-violet-100
+                         bg-white p-2 shadow-xl"
+            >
+              {user.role === 'AGENT' && (
+                <>
+                  <p className="px-3 pb-1 pt-1.5 text-[11px] font-semibold text-slate-500">Status de atendimento</p>
+                  {(['ONLINE', 'AWAY', 'BUSY'] as const).map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={status === option}
+                      disabled={statusSaving}
+                      onClick={() => void handleStatusChange(option)}
+                      className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm text-[#1e1b4b]
+                                 transition hover:bg-violet-50 disabled:opacity-60"
+                    >
+                      <span className={`h-2.5 w-2.5 rounded-full ${STATUS_INFO[option].dot}`} />
+                      <span className="flex-1">{STATUS_INFO[option].label}</span>
+                      {status === option && <CheckIcon />}
+                    </button>
+                  ))}
+                  <div className="my-1.5 h-px bg-violet-100" />
+                </>
+              )}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  navigate('/settings');
+                }}
+                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm text-[#1e1b4b] transition hover:bg-violet-50"
+              >
+                Perfil e configurações
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => void handleLogout()}
+                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm text-rose-600 transition hover:bg-rose-50"
+              >
+                <LogoutIcon />
+                Sair
+              </button>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setMenuOpen((open) => !open)}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            title={collapsed ? `${user.name} · ${statusInfo.label}` : 'Menu do usuário'}
+            className={`flex w-full items-center rounded-2xl border border-violet-100 bg-white/70 shadow-sm
+                        backdrop-blur-sm transition hover:bg-white ${
+                          collapsed ? 'justify-center p-2' : 'gap-3 p-3'
+                        }`}
+          >
+            <span className="relative shrink-0">
+              <ProfileAvatar
+                name={user.name}
+                pictureUrl={user.profilePictureUrl}
+                sizeClass={collapsed ? 'h-10 w-10' : 'h-12 w-12'}
+                textClass="text-sm"
+              />
+              <span className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white ${statusInfo.dot}`} />
+            </span>
+            {!collapsed && (
+              <>
+                <span className="min-w-0 flex-1 text-left">
+                  <span className="block truncate text-sm font-bold text-[#1e1b4b]">{user.name}</span>
+                  <span className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-600">
+                    <span className={`h-2 w-2 rounded-full ${statusInfo.dot}`} />
+                    {statusInfo.label}
+                  </span>
+                </span>
+                <span className={`shrink-0 text-[#1e1b4b] transition-transform ${menuOpen ? 'rotate-180' : ''}`}>
+                  <ChevronDownIcon />
+                </span>
+              </>
+            )}
+          </button>
+
+          {statusError && (
+            <p role="alert" className="mt-2 px-2 text-[11px] text-rose-600">
+              {statusError}
+            </p>
+          )}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+/* ======================================================================
+ * Item de navegação
+ * ==================================================================== */
+
+function SidebarLink({
+  item,
+  collapsed,
+  showChevron,
+}: {
+  item: NavItem;
+  collapsed: boolean;
+  showChevron?: boolean;
+}) {
+  return (
+    <li className={`relative ${collapsed ? 'pl-2' : 'pl-3'}`}>
+      <NavLink
+        to={item.to}
+        title={collapsed ? item.label : undefined}
+        className={({ isActive }) =>
+          `flex min-h-[52px] items-center rounded-full text-[15px] font-medium transition-all ${
+            collapsed ? 'justify-center px-0' : 'gap-4 px-5'
+          } ${
+            isActive
+              ? 'bg-gradient-to-r from-fuchsia-600 via-rose-500 to-orange-500 text-white shadow-[0_8px_22px_rgba(244,63,94,0.35)]'
+              : 'text-[#1e1b4b] hover:bg-white/80 hover:shadow-sm'
+          }`
+        }
+      >
+        {({ isActive }) => (
+          <>
+            {isActive && (
+              <span
+                aria-hidden="true"
+                className="absolute left-0 top-2.5 bottom-2.5 w-1 rounded-full bg-fuchsia-600"
+              />
+            )}
             <span className="relative shrink-0">
               {item.icon}
               {item.badge ? (
@@ -175,110 +381,42 @@ export function IconBar() {
                 </span>
               ) : null}
             </span>
-            <span className="hidden min-w-0 flex-1 leading-tight lg:block">{item.label}</span>
-          </NavLink>
-        ))}
-      </nav>
-
-      <div className="relative z-10 mt-4 rounded-2xl border border-white/10 bg-white/5 p-1.5 backdrop-blur-sm lg:p-2.5">
-        <div className="flex flex-col items-center gap-1 lg:flex-row lg:items-center lg:gap-1">
-          <div className="min-w-0 flex-1">
-            <button
-              type="button"
-              onClick={() => navigate('/settings')}
-              className="flex w-full min-w-0 items-center justify-center gap-2.5 rounded-xl p-0 text-left
-                         transition-colors hover:bg-white/10 lg:justify-start lg:p-1"
-              title="Abrir perfil e configurações"
-            >
-              <span className="relative shrink-0">
-                <ProfileAvatar
-                  name={user.name}
-                  pictureUrl={user.profilePictureUrl}
-                  sizeClass="h-9 w-9 lg:h-10 lg:w-10"
-                  textClass="text-xs"
-                />
-                <span className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-[#0c1033] ${statusColor}`} />
-              </span>
-              <span className="hidden min-w-0 flex-1 lg:block">
-                <span className="block truncate text-xs font-semibold text-white">{user.name}</span>
-              </span>
-            </button>
-            {user.role === 'AGENT' ? (
-              <select
-                aria-label="Status de atendimento"
-                value={status}
-                disabled={statusSaving}
-                onChange={(event) =>
-                  void handleStatusChange(event.target.value as AgentStatus)
-                }
-                className="mt-0.5 block w-full max-w-full cursor-pointer border-0 bg-transparent p-0 text-center text-[11px] text-slate-300 outline-none focus:text-white disabled:opacity-60 lg:ml-[52px] lg:w-auto lg:text-left"
-              >
-                <option value="ONLINE" className="bg-[#0c1033]">Online</option>
-                <option value="AWAY" className="bg-[#0c1033]">Ausente</option>
-                <option value="BUSY" className="bg-[#0c1033]">Ocupado</option>
-              </select>
-            ) : (
-              <span className="hidden text-[11px] text-slate-300 lg:ml-[52px] lg:block">{statusLabel}</span>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={handleLogout}
-            title="Sair"
-            aria-label="Sair"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg
-                       text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
-          >
-            <LogoutIcon />
-          </button>
-        </div>
-      </div>
-      {statusError && (
-        <p role="alert" className="relative z-10 mt-2 px-2 text-[10px] text-rose-300">
-          {statusError}
-        </p>
-      )}
-    </aside>
+            {!collapsed && <span className="min-w-0 flex-1 leading-tight">{item.label}</span>}
+            {!collapsed && showChevron && <ChevronRightIcon />}
+          </>
+        )}
+      </NavLink>
+    </li>
   );
 }
+
+/* ======================================================================
+ * Ícones
+ * ==================================================================== */
+
+const svgProps = {
+  width: 24,
+  height: 24,
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.8,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+  'aria-hidden': true,
+} as const;
 
 function ChatIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg {...svgProps}>
       <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </svg>
-  );
-}
-
-function ContactsIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 21v-1a7 7 0 0 1 7-7h2a7 7 0 0 1 7 7v1" />
-    </svg>
-  );
-}
-
-function QuickReplyIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M13 2 4 14h7l-1 8 9-12h-7z" />
-    </svg>
-  );
-}
-
-function KnowledgeBaseIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="4" y="3" width="16" height="18" rx="2" />
-      <path d="M8 8h8M8 12h8M8 16h5" />
     </svg>
   );
 }
 
 function FollowUpIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg {...svgProps}>
       <circle cx="12" cy="12" r="9" />
       <path d="M12 7v5l3 2" />
     </svg>
@@ -287,29 +425,44 @@ function FollowUpIcon() {
 
 function HistoryIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M8 2v4M16 2v4M3 10h18" />
-      <path d="M21 12V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7" />
-      <circle cx="17" cy="17" r="4" />
-      <path d="M17 15v2l1 1" />
+    <svg {...svgProps}>
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <path d="M16 2v4M8 2v4M3 10h18" />
     </svg>
   );
 }
 
 function PerformanceIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 21h18" />
-      <rect x="4" y="12" width="4" height="9" rx="1" />
-      <rect x="10" y="6" width="4" height="15" rx="1" />
-      <rect x="16" y="9" width="4" height="12" rx="1" />
+    <svg {...svgProps}>
+      <rect x="3" y="14" width="4" height="7" rx="1" />
+      <rect x="10" y="9" width="4" height="12" rx="1" />
+      <rect x="17" y="3" width="4" height="18" rx="1" />
+    </svg>
+  );
+}
+
+function ContactsIcon() {
+  return (
+    <svg {...svgProps}>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  );
+}
+
+function QuickReplyIcon() {
+  return (
+    <svg {...svgProps}>
+      <path d="M13 2 4 14h7l-1 8 9-12h-7z" />
     </svg>
   );
 }
 
 function SectorIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg {...svgProps}>
       <path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4" />
     </svg>
   );
@@ -317,26 +470,58 @@ function SectorIcon() {
 
 function UsersIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M22 21v-2a4 4 0 0 0-3-3.87" />
+    <svg {...svgProps}>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
       <circle cx="9" cy="7" r="4" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      <path d="m16 11 2 2 4-4" />
     </svg>
   );
 }
 
 function SettingsIcon() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg {...svgProps}>
       <circle cx="12" cy="12" r="3" />
       <path d="m19.4 15 .1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.2a2 2 0 1 1-4 0V19a1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 12.1h-.2a2 2 0 1 1 0-4H3a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 9.9 1h.2a2 2 0 1 1 4 0v.2A1.7 1.7 0 0 0 17 2.4l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.2a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.6 2.9Z" />
     </svg>
   );
 }
 
+function ChevronLeftIcon() {
+  return (
+    <svg {...svgProps} width={18} height={18} strokeWidth={2.2}>
+      <path d="m15 18-6-6 6-6" />
+    </svg>
+  );
+}
+
+function ChevronRightIcon() {
+  return (
+    <svg {...svgProps} width={18} height={18} strokeWidth={2.2}>
+      <path d="m9 18 6-6-6-6" />
+    </svg>
+  );
+}
+
+function ChevronDownIcon() {
+  return (
+    <svg {...svgProps} width={18} height={18} strokeWidth={2.2}>
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg {...svgProps} width={16} height={16} strokeWidth={2.4} className="text-fuchsia-600">
+      <path d="m5 12 5 5 9-10" />
+    </svg>
+  );
+}
+
 function LogoutIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg {...svgProps} width={18} height={18}>
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
     </svg>
   );

@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import type { AgentStatus } from '@prisma/client';
 import { prisma } from '../../config/prisma';
@@ -7,6 +8,7 @@ import {
   LoginInput,
   CreateUserInput,
   ChangePasswordInput,
+  UpdateProfileInput,
   UpdatePreferencesInput,
 } from './auth.schemas';
 
@@ -109,6 +111,49 @@ export async function me(userId: string) {
   }
 
   return user;
+}
+
+export async function updateProfile(userId: string, data: UpdateProfileInput) {
+  try {
+    return await prisma.user.update({
+      where: { id: userId },
+      data,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        role: true,
+        active: true,
+        sectorId: true,
+        profilePictureUrl: true,
+        status: true,
+        statusChangedAt: true,
+        soundEnabled: true,
+        desktopNotifications: true,
+        notificationSound: true,
+        sector: { select: { id: true, name: true, slug: true } },
+        createdAt: true,
+      },
+    });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      const target = Array.isArray(error.meta?.target)
+        ? error.meta.target.join(', ')
+        : String(error.meta?.target ?? '');
+      if (target.includes('email')) {
+        throw new AppError('Este email já está cadastrado', 409);
+      }
+      if (target.includes('phone')) {
+        throw new AppError('Este telefone já está cadastrado', 409);
+      }
+      throw new AppError('Email ou telefone já cadastrado', 409);
+    }
+    throw error;
+  }
 }
 
 export async function changePassword(

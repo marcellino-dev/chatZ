@@ -25,7 +25,14 @@ const followUpInclude = {
       requestedAgentId: true,
       sectorId: true,
       status: true,
-      client: { select: { name: true } },
+      priority: true,
+      client: {
+        select: {
+          name: true,
+          phone: true,
+          profilePictureUrl: true,
+        },
+      },
       agent: { select: { name: true } },
       participants: {
         select: { userId: true },
@@ -49,7 +56,10 @@ function toResponse(
       subject: ticket.subject,
       status: ticket.status,
       clientName: ticket.client.name,
+      clientPhone: ticket.client.phone,
+      clientProfilePictureUrl: ticket.client.profilePictureUrl,
       agentName: ticket.agent?.name ?? null,
+      priority: ticket.priority,
       canOpen:
         canViewTicket(user, ticket) ||
         ticket.participants.some(({ userId }) => userId === user.id),

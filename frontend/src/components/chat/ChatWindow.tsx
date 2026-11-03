@@ -8,7 +8,6 @@ import { getSocket } from '../../lib/socket';
 import { formatPhone, phoneHref } from '../../lib/format';
 import { AttachmentPreview, type Attachment } from './AttachmentPreview';
 import { SimpleEmojiPicker } from './EmojiPicker';
-import { KnowledgeBaseConsultation } from './KnowledgeBaseConsultation';
 import { ProfileAvatar } from '../ProfileAvatar';
 import type { Ticket, Message, MessageReadEvent, QuickReply, TicketNote } from '../../types';
 
@@ -91,7 +90,6 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
   const [stickerName, setStickerName] = useState('');
   const [stickerPickerOpen, setStickerPickerOpen] = useState(false);
   const [favoriteMenuMessageId, setFavoriteMenuMessageId] = useState<string | null>(null);
-  const [knowledgeBaseOpen, setKnowledgeBaseOpen] = useState(false);
 
   const [emojiOpen, setEmojiOpen] = useState(false);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
@@ -1025,17 +1023,6 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
           >
             <InfoIcon />
           </button>
-          {user?.role !== 'CLIENT' && (
-            <button
-              type="button"
-              onClick={() => setKnowledgeBaseOpen(true)}
-              title="Consultar base de conhecimento"
-              aria-label="Consultar base de conhecimento"
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f1f2f9] text-slate-700 transition hover:bg-slate-200 sm:h-12 sm:w-12"
-            >
-              <KnowledgeBaseIcon />
-            </button>
-          )}
         </div>
       </header>
 
@@ -1544,9 +1531,6 @@ export function ChatWindow({ onToggleInfo, infoOpen }: Props) {
           </div>
         )}
       </footer>
-      {knowledgeBaseOpen && user?.role !== 'CLIENT' && (
-        <KnowledgeBaseConsultation onClose={() => setKnowledgeBaseOpen(false)} />
-      )}
     </div>
   );
 }
@@ -1829,9 +1813,6 @@ function PhoneSmallIcon() {
 }
 function BackIcon() {
   return (<svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /><path d="M20 12H9" /></svg>);
-}
-function KnowledgeBaseIcon() {
-  return (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5z" /><path d="M4 5.5v16M8 7h8M8 11h8M8 15h5" /></svg>);
 }
 function SendIcon() {
   return (<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" /></svg>);
