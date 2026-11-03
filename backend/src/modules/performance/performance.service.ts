@@ -83,7 +83,7 @@ export async function requestTicketRating(
   try {
     await sendWhatsAppMessage({
       phone: ticket.client.phone,
-      text: `Como foi seu atendimento? Responda com uma nota de 1 a 5, seguida do protocolo: #${protocol} 5`,
+      text: `Como foi seu atendimento? Responda apenas com uma nota de 1 a 5. Se tiver mais de um pedido de avaliação pendente, envie a nota e o protocolo: #${protocol} 5`,
     });
   } catch (error) {
     console.error(`Não foi possível solicitar avaliação do ticket ${ticket.id}:`, error);
@@ -91,20 +91,52 @@ export async function requestTicketRating(
 }
 
 export async function captureTicketRating(phone: string, message: string) {
-  const match = message.trim().match(/^#([A-Fa-f0-9]{8})\s+([1-5])$/);
-  if (!match) return null;
+  const content = message.trim();
+  const match = content.match(/^#([A-Fa-f0-9]{8})\s+([1-5])$/);
+  const simpleScore = content.match(/^([1-5])$/);
+  if (!match && !simpleScore) return null;
 
-  const protocol = match[1].toUpperCase();
-  const score = Number(match[2]);
-  const rating = await prisma.ticketRating.findUnique({
-    where: { protocol },
-    include: { ticket: { include: { client: { select: { phone: true } } } } },
-  });
+  const normalizedPhone = phone.replace(/\D/g, '');
+  let rating:
+    | Prisma.TicketRatingGetPayload<{
+        include: {
+          ticket: {
+            include: { client: { select: { phone: true } } };
+          };
+        };
+      }>
+    | null;
+  let score: number;
 
-  if (!rating || rating.ticket.client.phone?.replace(/\D/g, '') !== phone.replace(/\D/g, '')) {
-    return 'Não encontrei uma avaliação pendente para esse protocolo e telefone.';
+  if (match) {
+    rating = await prisma.ticketRating.findUnique({
+      where: { protocol: match[1].toUpperCase() },
+      include: { ticket: { include: { client: { select: { phone: true } } } } },
+    });
+    score = Number(match[2]);
+    if (
+      !rating ||
+      rating.ticket.client.phone?.replace(/\D/g, '') !== normalizedPhone
+    ) {
+      return 'Não encontrei uma avaliação pendente para esse protocolo e telefone.';
+    }
+  } else {
+    const pendingRatings = await prisma.ticketRating.findMany({
+      where: {
+        score: null,
+        ticket: { client: { phone: normalizedPhone } },
+      },
+      orderBy: { requestedAt: 'desc' },
+      include: { ticket: { include: { client: { select: { phone: true } } } } },
+    });
+    if (pendingRatings.length === 0) return null;
+    if (pendingRatings.length > 1) {
+      return 'Recebi mais de um pedido de avaliação. Envie a nota junto com o protocolo no formato #AB12CD34 5.';
+    }
+    rating = pendingRatings[0];
+    score = Number(content);
   }
-  if (rating.score !== null) {
+  if (!rating || rating.score !== null) {
     return 'Essa avaliação já foi recebida. Obrigado!';
   }
 
@@ -113,7 +145,7 @@ export async function captureTicketRating(phone: string, message: string) {
     data: { score, receivedAt: new Date() },
   });
   if (updated.count === 0) return 'Essa avaliação já foi recebida. Obrigado!';
-  return 'Obrigado por avaliar nosso atendimento!';
+  return 'Obrigado por avaliar nosso atendimento! Agradecemos pelo contato e estamos à disposição.';
 }
 
 export async function getMyPerformance(

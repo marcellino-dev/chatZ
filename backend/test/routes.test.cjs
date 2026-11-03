@@ -252,7 +252,10 @@ test('agent performance tracks assignment periods, limits metrics to the signed-
     fixture.client.phone,
     `#${rating.protocol} 5`,
   );
-  assert.equal(thankYou, 'Obrigado por avaliar nosso atendimento!');
+  assert.equal(
+    thankYou,
+    'Obrigado por avaliar nosso atendimento! Agradecemos pelo contato e estamos à disposição.',
+  );
   assert.equal(
     (await prisma.ticketRating.findUnique({ where: { id: rating.id } })).score,
     5,
@@ -262,6 +265,86 @@ test('agent performance tracks assignment periods, limits metrics to the signed-
     `#${rating.protocol} 4`,
   );
   assert.equal(duplicateReply, 'Essa avaliação já foi recebida. Obrigado!');
+});
+
+test('a plain WhatsApp rating is acknowledged without restarting a closed conversation', async () => {
+  const ticket = await prisma.ticket.create({
+    data: {
+      subject: 'Atendimento encerrado para avaliação simples',
+      status: 'RESOLVED',
+      closedAt: new Date(),
+      sectorId: fixture.sector.id,
+      clientId: fixture.client.id,
+      agentId: fixture.owner.id,
+    },
+  });
+  const rating = await prisma.ticketRating.create({
+    data: {
+      ticketId: ticket.id,
+      agentId: fixture.owner.id,
+      protocol: `SIMPLE${process.pid}`,
+    },
+  });
+  await prisma.conversation.upsert({
+    where: { phone: fixture.client.phone },
+    create: {
+      phone: fixture.client.phone,
+      state: 'CLOSED',
+      sectorId: fixture.sector.id,
+      ticketId: ticket.id,
+    },
+    update: {
+      state: 'CLOSED',
+      sectorId: fixture.sector.id,
+      ticketId: ticket.id,
+    },
+  });
+
+  const originalFetch = global.fetch;
+  let sentMessage = '';
+  global.fetch = async (input, init) => {
+    if (String(input).startsWith('http://127.0.0.1:8080/')) {
+      sentMessage = JSON.parse(init.body).text;
+      return new Response(JSON.stringify({}), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return originalFetch(input, init);
+  };
+
+  let webhookResponse;
+  try {
+    webhookResponse = await originalFetch(`${baseUrl}/whatsapp/webhook`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        event: 'messages.upsert',
+        data: {
+          key: {
+            fromMe: false,
+            remoteJid: `${fixture.client.phone}@s.whatsapp.net`,
+          },
+          messageType: 'conversation',
+          message: { conversation: '5' },
+        },
+      }),
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+
+  assert.equal(webhookResponse.status, 200);
+  assert.deepEqual(await webhookResponse.json(), { ok: true, rating: true });
+  assert.match(sentMessage, /Agradecemos pelo contato/);
+  assert.equal(
+    (await prisma.ticketRating.findUnique({ where: { id: rating.id } })).score,
+    5,
+  );
+  assert.equal(
+    (await prisma.conversation.findUnique({ where: { phone: fixture.client.phone } })).state,
+    'CLOSED',
+  );
 });
 
 test('agents can update only their own status and admins cannot use the agent status route', async () => {
