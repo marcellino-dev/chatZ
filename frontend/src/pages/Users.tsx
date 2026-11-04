@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { UserModal } from '../components/UserModal';
@@ -6,7 +6,14 @@ import { IconBar } from '../components/chat/IconBar';
 import { WorkspaceHeader } from '../components/WorkspaceHeader';
 import { useAuthStore } from '../stores/auth';
 import { ProfileAvatar } from '../components/ProfileAvatar';
-import type { User } from '../types';
+import type { AgentStatus, User } from '../types';
+
+const STATUS_STYLE: Record<AgentStatus, { label: string; badge: string; dot: string }> = {
+  ONLINE: { label: 'Online', badge: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
+  AWAY: { label: 'Ausente', badge: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
+  BUSY: { label: 'Ocupado', badge: 'bg-rose-100 text-rose-700', dot: 'bg-rose-500' },
+  OFFLINE: { label: 'Offline', badge: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
+};
 
 export function Users() {
   const currentUser = useAuthStore((state) => state.user);
@@ -17,8 +24,8 @@ export function Users() {
   const [editing, setEditing] = useState<User | null>(null);
   const activeUsers = users.filter((user) => user.active).length;
 
-  async function loadUsers() {
-    setLoading(true);
+  const loadUsers = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     try {
       const { data } = await api.get<User[]>('/auth/users');
       setUsers(data);
@@ -26,13 +33,17 @@ export function Users() {
     } catch (err: any) {
       setError(err.response?.data?.error || 'Erro ao carregar usuários');
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
-    if (currentUser?.role === 'ADMIN') loadUsers();
-  }, [currentUser]);
+    if (currentUser?.role !== 'ADMIN') return;
+
+    void loadUsers();
+    const interval = window.setInterval(() => void loadUsers(false), 15_000);
+    return () => window.clearInterval(interval);
+  }, [currentUser?.role, loadUsers]);
 
   if (currentUser?.role !== 'ADMIN') return <Navigate to="/chat" replace />;
 
@@ -176,6 +187,7 @@ export function Users() {
                         <p className="mt-1 text-xs font-medium text-chatz-primary">
                           {user.sector?.name ?? 'Sem setor'}
                         </p>
+                        <AgentStatusBadge status={user.status ?? 'OFFLINE'} />
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
@@ -216,6 +228,16 @@ export function Users() {
         </div>
       </main>
     </div>
+  );
+}
+
+function AgentStatusBadge({ status }: { status: AgentStatus }) {
+  const statusInfo = STATUS_STYLE[status];
+  return (
+    <span className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusInfo.badge}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${statusInfo.dot}`} />
+      {statusInfo.label}
+    </span>
   );
 }
 

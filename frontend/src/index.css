@@ -65,23 +65,18 @@ input:focus, button:focus, textarea:focus, select:focus {
 /* ==========================
    UTILITÁRIOS CUSTOMIZADOS
    ========================== */
-
-/* Gradiente principal — mais quente (azul → roxo → rosa → laranja) */
 .bg-chatz-gradient {
   background: linear-gradient(135deg, #E719B5 0%, #EC4899 52%, #FF711D 100%);
 }
 
-/* Gradiente do botão (horizontal — igual referência) */
 .bg-chatz-button-gradient {
   background: linear-gradient(90deg, #E719B5 0%, #FB3B86 54%, #FF711D 100%);
 }
 
-/* Gradiente suave (fundos de cards leves) */
 .bg-chatz-gradient-soft {
   background: linear-gradient(135deg, #FFF0F8 0%, #FDF2F8 55%, #FFF7ED 100%);
 }
 
-/* Texto com gradiente — mesmo esquema do botão */
 .text-chatz-gradient {
   background: linear-gradient(90deg, #3B82F6 0%, #A855F7 24%, #EC4899 58%, #F97316 100%);
   -webkit-background-clip: text;
@@ -89,7 +84,6 @@ input:focus, button:focus, textarea:focus, select:focus {
   background-clip: text;
 }
 
-/* Blobs de fundo decorativos */
 .chatz-blob {
   position: absolute;
   border-radius: 50%;
@@ -98,7 +92,6 @@ input:focus, button:focus, textarea:focus, select:focus {
   pointer-events: none;
 }
 
-/* Vidro fosco (glassmorphism) */
 .chatz-glass {
   background: rgba(255, 255, 255, 0.7);
   backdrop-filter: blur(12px);
@@ -118,83 +111,239 @@ select {
   padding-right: 40px;
 }
 
-/* ==========================
-   IMAGENS — melhora renderização
-   ========================== */
 img {
   image-rendering: -webkit-optimize-contrast;
 }
 
-.login-panel {
+/* ==========================
+   LOGIN
+   ========================== */
+
+.login-page {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100svh;
+  background-color: #05051c;
+  background-image:
+    linear-gradient(90deg, rgba(3, 3, 22, 0.32), rgba(4, 3, 25, 0.12) 48%, rgba(5, 3, 23, 0.38)),
+    url('/Espa%C3%A7o%20Tech%20Neon%20com%20ChatZ.png');
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 100% 100%, cover;
+}
+
+.login-layout {
+  position: relative;
+  z-index: 1;
+}
+
+.login-logo {
+  display: block;
+  height: auto;
+  object-fit: contain;
+}
+
+.login-logo-intro {
+  width: min(230px, 68vw);
+}
+
+.login-logo-form {
+  width: min(190px, 60vw);
+  margin-inline: auto;
+}
+
+.login-welcome-image {
+  display: block;
+  width: min(100%, 430px);
+  height: auto;
+  object-fit: contain;
+}
+
+.login-intro {
+  text-shadow: 0 2px 24px rgba(2, 2, 20, 0.3);
+}
+
+.login-feature-card {
+  border: 1px solid rgba(176, 138, 255, 0.2);
+  background: linear-gradient(145deg, rgba(22, 16, 55, 0.7), rgba(12, 10, 38, 0.62));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(12px);
+}
+
+.login-tagline {
+  letter-spacing: 0.2em;
+}
+
+/* ---------- Card de vidro (igual à referência) ---------- */
+.login-card {
+  border-radius: 34px;
   background:
-    radial-gradient(ellipse at 70% 8%, rgba(116, 35, 83, 0.16), transparent 34%),
-    #0c0f15;
+    radial-gradient(ellipse at 0% 0%, rgba(149, 53, 206, 0.14), transparent 55%),
+    linear-gradient(150deg, rgba(34, 24, 72, 0.5), rgba(14, 10, 40, 0.58));
+  -webkit-backdrop-filter: blur(20px) saturate(1.25);
+  backdrop-filter: blur(20px) saturate(1.25);
+  border: 1px solid rgba(190, 150, 255, 0.38);
+  box-shadow:
+    0 30px 80px rgba(2, 1, 18, 0.45),
+    0 0 40px rgba(111, 34, 196, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
-.login-panel-glow {
-  background: rgba(236, 72, 153, 0.12);
-  filter: blur(100px);
+.login-title {
+  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  font-size: 1.7rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: #fff;
 }
 
-.login-panel-ring {
-  border: 2px solid rgba(249, 115, 22, 0.9);
+.login-form label:not(.login-checkbox) {
+  margin-bottom: 8px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
-.login-panel .login-input {
-  border-color: #343b49;
-  background-color: #1b2029;
-  color: #f8fafc;
+.login-form .login-input {
+  min-height: 54px;
+  border: 1px solid rgba(190, 160, 235, 0.24);
+  border-radius: 18px;
+  background-color: rgba(255, 255, 255, 0.045);
+  color: #f8f5ff;
+  box-shadow: none;
 }
 
-.login-panel .login-input::placeholder {
-  color: #778194;
+.login-form .login-input::placeholder {
+  color: #a9a3c4;
 }
 
-.login-panel .login-input:focus {
-  border-color: #ec4899;
-  box-shadow: 0 0 0 3px rgba(236, 72, 153, 0.16);
+.login-form .login-input:focus {
+  border-color: #a855f7;
+  background-color: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.2);
 }
 
-.login-panel label:not(.login-checkbox) {
-  color: #e2e8f0;
+.login-form .relative > span {
+  color: #ece4ff;
 }
 
-.login-panel .relative > span {
-  color: #94a3b8;
+.login-form .relative > button {
+  color: #d9d0f0;
 }
 
-.login-panel .relative > button {
-  color: #94a3b8;
+.login-form .relative > button:hover {
+  color: #f5eaff;
 }
 
-.login-panel .relative > button:hover {
-  color: #e2e8f0;
-}
-
+/* ---------- Checkbox com check branco ---------- */
 .login-checkbox > span:first-of-type {
-  border-color: #475569;
+  position: relative;
+  border-color: rgba(211, 191, 244, 0.5);
+  border-radius: 6px;
 }
 
 .login-checkbox > span:last-of-type {
-  color: #cbd5e1;
+  color: #f0eafa;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .login-checkbox input:checked + span:first-of-type {
-  border-color: #ec4899;
-  background-color: #ec4899;
+  border-color: #9a35f0;
+  background-color: #9a35f0;
 }
 
+.login-checkbox input:checked + span:first-of-type::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.login-link {
+  color: #c53df2;
+  font-weight: 600;
+  transition: color 0.15s ease;
+}
+
+.login-link:hover {
+  color: #ff8aee;
+}
+
+/* ---------- Botão em pílula ---------- */
 .login-submit {
-  background: linear-gradient(100deg, #e719b5 0%, #fb3b86 54%, #ff711d 100%);
-  box-shadow: 0 8px 24px rgba(236, 72, 153, 0.2);
+  min-height: 54px;
+  border-radius: 999px;
+  font-size: 16px;
+  font-weight: 700;
+  background: linear-gradient(90deg, #0a7dff 0%, #6d2bfc 38%, #ee2a98 72%, #ff8a2a 100%);
+  box-shadow: 0 10px 26px rgba(150, 40, 230, 0.3);
 }
 
 .login-submit:hover {
-  filter: brightness(1.08) saturate(1.05);
+  filter: brightness(1.06) saturate(1.05);
 }
 
-@media (min-width: 1024px) and (max-height: 820px) {
-  .login-test-shortcuts {
-    display: none;
+/* ---------- Atalhos de teste (DEV) ---------- */
+.login-test-shortcuts {
+  border-radius: 999px;
+  border-color: rgba(190, 160, 235, 0.22);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.login-test-shortcuts[open] {
+  border-radius: 20px;
+}
+
+.login-card button:focus-visible,
+.login-card a:focus-visible,
+.login-card summary:focus-visible {
+  outline: 2px solid #d946ef;
+  outline-offset: 3px;
+}
+
+@media (min-width: 1024px) {
+  .login-card {
+    min-height: 610px;
+    max-width: 520px;
+  }
+}
+
+@media (max-width: 1023px) {
+  .login-page {
+    background-position: center;
+  }
+
+  .login-intro {
+    max-width: 560px;
+  }
+
+  .login-intro-copy {
+    margin-top: 1.5rem;
+  }
+
+  .login-feature-card {
+    min-height: 96px;
+  }
+}
+
+@media (max-width: 639px) {
+  .login-feature-card {
+    padding: 0.625rem;
+  }
+
+  .login-tagline {
+    font-size: 9px;
+    letter-spacing: 0.13em;
   }
 }

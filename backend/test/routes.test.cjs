@@ -438,6 +438,27 @@ test('agents can update only their own status and admins cannot use the agent st
     'ONLINE',
   );
 
+  const listedUsersResponse = await fetch(`${baseUrl}/auth/users`, {
+    headers: { authorization: `Bearer ${adminToken}` },
+  });
+  assert.equal(listedUsersResponse.status, 200);
+  const listedUsers = await listedUsersResponse.json();
+  assert.equal(
+    listedUsers.find((user) => user.id === fixture.owner.id).status,
+    'AWAY',
+  );
+
+  const busyStatusResponse = await fetch(`${baseUrl}/auth/me/status`, {
+    method: 'PUT',
+    headers: {
+      authorization: `Bearer ${agentToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ status: 'BUSY' }),
+  });
+  assert.equal(busyStatusResponse.status, 200);
+  assert.equal((await busyStatusResponse.json()).status, 'BUSY');
+
   const invalidStatusResponse = await fetch(`${baseUrl}/auth/me/status`, {
     method: 'PUT',
     headers: {

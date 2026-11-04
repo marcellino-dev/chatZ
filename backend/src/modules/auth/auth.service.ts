@@ -343,6 +343,8 @@ export async function listUsers() {
       role: true,
       active: true,
       sectorId: true,
+      status: true,
+      statusChangedAt: true,
       sector: {
         select: { id: true, name: true, slug: true },
       },
