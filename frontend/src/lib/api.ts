@@ -36,7 +36,25 @@ api.interceptors.response.use(
 // Helper pra extrair mensagem de erro
 export function getErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
-    return error.response?.data?.error || error.message;
+    const data: unknown = error.response?.data;
+    if (data && typeof data === 'object') {
+      const response = data as Record<string, unknown>;
+      if (typeof response.error === 'string' && response.error !== 'Dados inválidos') {
+        return response.error;
+      }
+
+      if (response.issues && typeof response.issues === 'object') {
+        const messages = Object.values(response.issues)
+          .filter((value): value is string[] => Array.isArray(value))
+          .flat();
+        const firstMessage = messages.find((message): message is string => typeof message === 'string');
+        if (firstMessage) return firstMessage;
+      }
+
+      if (typeof response.error === 'string') return response.error;
+    }
+
+    return error.message;
   }
   return 'Erro desconhecido';
 }

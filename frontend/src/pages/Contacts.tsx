@@ -1,12 +1,15 @@
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type ChangeEvent,
   type FormEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, getErrorMessage } from '../lib/api';
 import { IconBar } from '../components/chat/IconBar';
@@ -178,6 +181,9 @@ export function Contacts() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [menuId, setMenuId] = useState<string | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const menuAnchorRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const [monthStart] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1).getTime();
@@ -230,9 +236,43 @@ export function Contacts() {
   // Fecha o menu "⋯" ao clicar em qualquer outro lugar.
   useEffect(() => {
     if (!menuId) return;
-    const close = () => setMenuId(null);
+    const close = () => {
+      setMenuId(null);
+      setMenuPosition(null);
+    };
     document.addEventListener('click', close);
     return () => document.removeEventListener('click', close);
+  }, [menuId]);
+
+  useLayoutEffect(() => {
+    if (!menuId) return;
+
+    const updatePosition = () => {
+      const anchor = menuAnchorRef.current;
+      const menu = menuRef.current;
+      if (!anchor || !menu) return;
+
+      const anchorRect = anchor.getBoundingClientRect();
+      const menuRect = menu.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - anchorRect.bottom;
+      const top = spaceBelow >= menuRect.height + 8 || anchorRect.top < menuRect.height + 8
+        ? anchorRect.bottom + 8
+        : anchorRect.top - menuRect.height - 8;
+      const left = Math.min(
+        Math.max(8, anchorRect.right - menuRect.width),
+        window.innerWidth - menuRect.width - 8
+      );
+
+      setMenuPosition({ top: Math.max(8, top), left });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
   }, [menuId]);
 
   const tagOptions = useMemo(() => {
@@ -720,42 +760,26 @@ export function Contacts() {
                             </RowAction>
                             <RowAction
                               label={`Mais ações para ${contact.name}`}
-                              onClick={() => setMenuId((current) => (current === contact.id ? null : contact.id))}
+                              onClick={(event) => {
+                                if (menuId === contact.id) {
+                                  setMenuId(null);
+                                  setMenuPosition(null);
+                                  menuAnchorRef.current = null;
+                                  return;
+                                }
+
+                                const anchor = event.currentTarget;
+                                const rect = anchor.getBoundingClientRect();
+                                menuAnchorRef.current = anchor;
+                                setMenuPosition({
+                                  top: rect.bottom + 8,
+                                  left: Math.max(8, rect.right - 192),
+                                });
+                                setMenuId(contact.id);
+                              }}
                             >
                               <Icon name="dots" className="h-4 w-4" />
                             </RowAction>
-                            {menuId === contact.id && (
-                              <div
-                                role="menu"
-                                className="absolute right-0 top-full z-20 mt-2 w-48 overflow-hidden rounded-2xl bg-white py-1.5 text-left shadow-xl ring-1 ring-slate-200"
-                              >
-                                <button
-                                  type="button"
-                                  role="menuitem"
-                                  onClick={() => {
-                                    setMenuId(null);
-                                    setStartingContact(contact);
-                                  }}
-                                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-violet-50"
-                                >
-                                  <Icon name="chat" className="h-4 w-4" />
-                                  Iniciar conversa
-                                </button>
-                                <button
-                                  type="button"
-                                  role="menuitem"
-                                  disabled={deletingId === contact.id}
-                                  onClick={() => {
-                                    setMenuId(null);
-                                    void handleDelete(contact);
-                                  }}
-                                  className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-                                >
-                                  <Icon name="trash" className="h-4 w-4" />
-                                  {deletingId === contact.id ? 'Excluindo...' : 'Excluir'}
-                                </button>
-                              </div>
-                            )}
                           </div>
                         </td>
                       </tr>
@@ -874,6 +898,50 @@ export function Contacts() {
               navigate(`/chat/${ticket.id}`);
             }}
           />
+        )}
+        {menuId && menuPosition && createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            onClick={(event) => event.stopPropagation()}
+            className="fixed z-[60] w-48 overflow-y-auto rounded-2xl bg-white py-1.5 text-left shadow-xl ring-1 ring-slate-200"
+            style={{
+              top: menuPosition.top,
+              left: menuPosition.left,
+              maxHeight: 'calc(100dvh - 1rem)',
+            }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                const contact = contacts.find((item) => item.id === menuId);
+                setMenuId(null);
+                setMenuPosition(null);
+                if (contact) setStartingContact(contact);
+              }}
+              className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-violet-50"
+            >
+              <Icon name="chat" className="h-4 w-4" />
+              Iniciar conversa
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={deletingId === menuId}
+              onClick={() => {
+                const contact = contacts.find((item) => item.id === menuId);
+                setMenuId(null);
+                setMenuPosition(null);
+                if (contact) void handleDelete(contact);
+              }}
+              className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+            >
+              <Icon name="trash" className="h-4 w-4" />
+              {deletingId === menuId ? 'Excluindo...' : 'Excluir'}
+            </button>
+          </div>,
+          document.body
         )}
       </main>
     </div>
@@ -1079,7 +1147,7 @@ function RowAction({
   children,
 }: {
   label: string;
-  onClick: () => void;
+  onClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
   children: ReactNode;
 }) {
   return (

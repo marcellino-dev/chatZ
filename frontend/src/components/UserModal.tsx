@@ -111,6 +111,8 @@ export function UserModal({ isOpen, user, onClose }: Props) {
             <input
               type="text"
               required
+              minLength={2}
+              maxLength={80}
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full px-4 py-3 bg-chatz-bg border border-chatz-border rounded-lg
@@ -141,6 +143,7 @@ export function UserModal({ isOpen, user, onClose }: Props) {
             <input
               type="password"
               required={!isEdit}
+              minLength={6}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder={isEdit ? '••••••' : ''}
@@ -148,6 +151,9 @@ export function UserModal({ isOpen, user, onClose }: Props) {
                          text-chatz-text placeholder-chatz-muted
                          focus:border-chatz-primary transition-all"
             />
+            <p className="mt-1 text-xs text-chatz-muted">
+              {isEdit ? 'Deixe vazio para manter a senha atual; se alterar, use no mínimo 6 caracteres.' : 'Use no mínimo 6 caracteres.'}
+            </p>
           </div>
 
           <div>
