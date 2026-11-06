@@ -177,6 +177,7 @@ export function SimpleEmojiPicker({ onEmojiClick, onClose }: Props) {
           {Object.keys(EMOJI_CATEGORIES).map((cat) => (
             <button
               key={cat}
+              type="button"
               onClick={() => setActiveCategory(cat)}
               className={`px-2 py-1 text-xs rounded-chatz whitespace-nowrap transition-all ${
                 activeCategory === cat
@@ -202,6 +203,7 @@ export function SimpleEmojiPicker({ onEmojiClick, onClose }: Props) {
               {searchResults.map((emoji, i) => (
                 <button
                   key={`${emoji}-${i}`}
+                  type="button"
                   onClick={() => onEmojiClick(emoji)}
                   className="w-9 h-9 rounded hover:bg-chatz-surface-hover flex items-center justify-center
                              text-xl transition-all active:scale-95"
@@ -217,6 +219,7 @@ export function SimpleEmojiPicker({ onEmojiClick, onClose }: Props) {
             {EMOJI_CATEGORIES[activeCategory].map((emoji, i) => (
               <button
                 key={`${emoji}-${i}`}
+                type="button"
                 onClick={() => onEmojiClick(emoji)}
                 className="w-9 h-9 rounded hover:bg-chatz-surface-hover flex items-center justify-center
                            text-xl transition-all active:scale-95"

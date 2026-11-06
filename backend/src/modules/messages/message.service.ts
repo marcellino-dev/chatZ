@@ -222,7 +222,7 @@ export async function sendMessage(
             phone,
             url: fullUrl,
             mimetype: data.attachment.mimetype,
-            filename: data.attachment.filename,
+            filename: path.basename(data.attachment.originalName.replace(/\\/g, '/')),
             caption: data.attachment.sticker
               ? ''
               : formatWithName(data.content?.trim() || ''),
