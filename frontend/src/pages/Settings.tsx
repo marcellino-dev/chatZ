@@ -188,11 +188,22 @@ function ProfileSection({ user, onChangePassword }: { user: User; onChangePasswo
 interface ProfileStats {
   totalConversations: number;
   resolved: number;
-  averageTime: string; // ex.: "2h 18min"
+  averageAssignmentDurationMs: number | null;
+}
+
+function formatAverageAssignmentDuration(milliseconds: number | null) {
+  if (milliseconds === null) return '—';
+  const minutes = Math.round(milliseconds / 60_000);
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (hours === 0) return `${remainingMinutes}min`;
+  if (remainingMinutes === 0) return `${hours}h`;
+  return `${hours}h ${remainingMinutes}min`;
 }
 
 function ProfileHero({ user }: { user: User }) {
   const [stats, setStats] = useState<ProfileStats | null>(null);
+  const [statsError, setStatsError] = useState('');
   const status = STATUS_STYLE[user.status ?? 'ONLINE'];
   const roleLabel = user.role === 'ADMIN' ? 'Administrador' : 'Atendente';
 
@@ -200,13 +211,18 @@ function ProfileHero({ user }: { user: User }) {
     if (user.role !== 'AGENT') return;
     let active = true;
     api
-      // ⚠️ endpoint hipotético: ajuste para o que existir no seu backend
-      .get<ProfileStats>('/auth/me/stats')
+      .get<ProfileStats>('/performance/mine/summary')
       .then(({ data }) => {
-        if (active) setStats(data);
+        if (active) {
+          setStats(data);
+          setStatsError('');
+        }
       })
-      .catch(() => {
-        if (active) setStats(null);
+      .catch((error: unknown) => {
+        if (active) {
+          setStats(null);
+          setStatsError(getErrorMessage(error));
+        }
       });
     return () => {
       active = false;
@@ -257,8 +273,17 @@ function ProfileHero({ user }: { user: User }) {
                 label="Resolvidas"
                 value={stats ? stats.resolved.toLocaleString('pt-BR') : '—'}
               />
-              <HeroStat icon={<ClockIcon />} label="Tempo médio" value={stats?.averageTime ?? '—'} />
+              <HeroStat
+                icon={<ClockIcon />}
+                label="Tempo médio"
+                value={formatAverageAssignmentDuration(stats?.averageAssignmentDurationMs ?? null)}
+              />
             </dl>
+          )}
+          {user.role === 'AGENT' && statsError && (
+            <p className="mt-3 text-sm text-rose-600" role="alert">
+              Não foi possível carregar os indicadores: {statsError}
+            </p>
           )}
         </div>
       </div>

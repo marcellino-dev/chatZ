@@ -20,15 +20,13 @@ interface PerformanceMetrics {
   ratingDistribution: Record<1 | 2 | 3 | 4 | 5, number>;
 }
 
-/** ⚠️ Endpoint hipotético: GET /performance/mine/daily?from&to → um item por dia do período. */
 interface DailyPoint {
-  date: string; // 'YYYY-MM-DD'
+  date: string;
   assignmentsStarted: number;
   assignmentsCompleted: number;
   activeAssignments: number;
 }
 
-/** ⚠️ Endpoint hipotético: GET /performance/mine/recent?limit=5 → últimos atendimentos do usuário. */
 interface RecentActivity {
   id: string;
   createdAt: string;

@@ -4,7 +4,7 @@ import { IconBar } from '../components/chat/IconBar';
 import { ProfileAvatar } from '../components/ProfileAvatar';
 import { api, getErrorMessage } from '../lib/api';
 import { useAuthStore } from '../stores/auth';
-import type { Ticket, TicketStatus, User } from '../types';
+import type { FollowUp, Ticket, TicketStatus, User } from '../types';
 
 type Period = 'all' | '7' | '30' | '90';
 type StatusFilter = 'all' | 'RESOLVED' | 'CLOSED';
@@ -57,6 +57,8 @@ export function History() {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [pendingFollowUps, setPendingFollowUps] = useState<number | null>(null);
+  const [followUpsError, setFollowUpsError] = useState('');
   const [agents, setAgents] = useState<User[]>([]);
   const [agentsError, setAgentsError] = useState('');
   const [search, setSearch] = useState('');
@@ -119,6 +121,24 @@ export function History() {
     };
   }, [search, refreshKey, user?.role, agent]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    api
+      .get<FollowUp[]>('/follow-ups/mine', { signal: controller.signal })
+      .then(({ data }) => {
+        setPendingFollowUps(new Set(data.map((followUp) => followUp.ticketId)).size);
+        setFollowUpsError('');
+      })
+      .catch((requestError: unknown) => {
+        if (!controller.signal.aborted) {
+          setPendingFollowUps(null);
+          setFollowUpsError(getErrorMessage(requestError));
+        }
+      });
+
+    return () => controller.abort();
+  }, []);
+
   const filteredTickets = useMemo(() => {
     return tickets.filter((ticket) => {
       const closedAt = new Date(ticket.closedAt ?? ticket.updatedAt).getTime();
@@ -146,8 +166,6 @@ export function History() {
   const currentPage = Math.min(page, totalPages);
   const visibleTickets = filteredTickets.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const resolvedCount = filteredTickets.filter((ticket) => ticket.status === 'RESOLVED').length;
-  // TODO(backend): contar conversas "em acompanhamento" (ex.: com follow-up pendente).
-  // Enquanto não houver esse dado, o card mostra "—".
   const firstItem = filteredTickets.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const lastItem = Math.min(currentPage * pageSize, filteredTickets.length);
   const hasActiveFilters =
@@ -196,8 +214,8 @@ export function History() {
             <MetricCard
               icon={<ArchiveMetricIcon />}
               tone="orange"
-              label="Em acompanhamento"
-              value="—"
+              label="Atendimentos com follow-up"
+              value={pendingFollowUps === null ? '—' : pendingFollowUps.toLocaleString('pt-BR')}
             />
             <MetricCard
               icon={<HourglassMetricIcon />}
@@ -310,6 +328,11 @@ export function History() {
           {agentsError && user?.role === 'ADMIN' && (
             <p role="alert" className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
               Não foi possível carregar a lista de atendentes: {agentsError}
+            </p>
+          )}
+          {followUpsError && (
+            <p role="alert" className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+              Não foi possível carregar os atendimentos com follow-up: {followUpsError}
             </p>
           )}
 

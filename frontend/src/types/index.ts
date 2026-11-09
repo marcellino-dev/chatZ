@@ -100,6 +100,7 @@ export interface Ticket {
   sectorId: string;
   clientId: string;
   requestedAgentId: string | null;
+  requestedAnyAgent: boolean;
   agentId: string | null;
   createdAt: string;
   updatedAt: string;

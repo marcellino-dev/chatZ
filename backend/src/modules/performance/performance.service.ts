@@ -193,6 +193,37 @@ export async function getMyPerformance(
   };
 }
 
+export async function getMyPerformanceSummary(agentId: string) {
+  const [tickets, completedSessions] = await Promise.all([
+    prisma.ticket.findMany({
+      where: {
+        OR: [
+          { agentId },
+          { assignmentSessions: { some: { agentId } } },
+        ],
+      },
+      select: { id: true, status: true },
+    }),
+    prisma.agentTicketSession.findMany({
+      where: { agentId, endedAt: { not: null } },
+      select: { assignedAt: true, endedAt: true },
+    }),
+  ]);
+  const durations = completedSessions.map((session) =>
+    Math.max(0, session.endedAt!.getTime() - session.assignedAt.getTime())
+  );
+
+  return {
+    totalConversations: tickets.length,
+    resolved: tickets.filter(
+      (ticket) => ticket.status === 'RESOLVED' || ticket.status === 'CLOSED'
+    ).length,
+    averageAssignmentDurationMs: durations.length
+      ? Math.round(durations.reduce((total, duration) => total + duration, 0) / durations.length)
+      : null,
+  };
+}
+
 function dateKeyInTimeZone(date: Date, timeZone: string) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone,
@@ -202,6 +233,43 @@ function dateKeyInTimeZone(date: Date, timeZone: string) {
   }).formatToParts(date);
   const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
   return `${values.year}-${values.month}-${values.day}`;
+}
+
+function startOfDayInTimeZone(dateKey: string, timeZone: string) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const targetTime = Date.UTC(year, month - 1, day);
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  });
+  let timestamp = targetTime;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const values = Object.fromEntries(
+      formatter
+        .formatToParts(new Date(timestamp))
+        .map(({ type, value }) => [type, Number(value)])
+    );
+    const localTime = Date.UTC(
+      values.year,
+      values.month - 1,
+      values.day,
+      values.hour,
+      values.minute,
+      values.second
+    );
+    const difference = targetTime - localTime;
+    timestamp += difference;
+    if (difference === 0) break;
+  }
+
+  return new Date(timestamp);
 }
 
 export async function getMyDailyPerformance(
@@ -215,7 +283,11 @@ export async function getMyDailyPerformance(
   }
 
   const sessions = await prisma.agentTicketSession.findMany({
-    where: { agentId, assignedAt: { gte: from, lt: to } },
+    where: {
+      agentId,
+      assignedAt: { lt: to },
+      OR: [{ endedAt: null }, { endedAt: { gte: from } }],
+    },
     select: { assignedAt: true, endedAt: true },
   });
   const days = new Map<string, {
@@ -224,44 +296,76 @@ export async function getMyDailyPerformance(
     activeAssignments: number;
   }>();
 
-  for (const session of sessions) {
-    const key = dateKeyInTimeZone(session.assignedAt, timeZone);
-    const day = days.get(key) ?? {
-      assignmentsStarted: 0,
-      assignmentsCompleted: 0,
-      activeAssignments: 0,
-    };
-    day.assignmentsStarted += 1;
-    if (session.endedAt) day.assignmentsCompleted += 1;
-    else day.activeAssignments += 1;
-    days.set(key, day);
-  }
-
   const startDate = dateKeyInTimeZone(from, timeZone);
   const endDate = dateKeyInTimeZone(new Date(to.getTime() - 1), timeZone);
-  const results: Array<{
-    date: string;
-    assignmentsStarted: number;
-    assignmentsCompleted: number;
-    activeAssignments: number;
-  }> = [];
+  const dateKeys: string[] = [];
+  const dayEnds = new Map<string, number>();
   const cursor = new Date(`${startDate}T00:00:00.000Z`);
   const lastDay = new Date(`${endDate}T00:00:00.000Z`);
 
   while (cursor <= lastDay) {
     const date = cursor.toISOString().slice(0, 10);
-    results.push({
-      date,
-      ...(days.get(date) ?? {
-        assignmentsStarted: 0,
-        assignmentsCompleted: 0,
-        activeAssignments: 0,
-      }),
+    days.set(date, {
+      assignmentsStarted: 0,
+      assignmentsCompleted: 0,
+      activeAssignments: 0,
     });
+    dateKeys.push(date);
+    const nextDay = new Date(cursor);
+    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+    dayEnds.set(
+      date,
+      Math.min(
+        startOfDayInTimeZone(nextDay.toISOString().slice(0, 10), timeZone).getTime(),
+        to.getTime()
+      )
+    );
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
 
-  return results;
+  for (const session of sessions) {
+    const startTime = session.assignedAt.getTime();
+    const endedAt = session.endedAt;
+    const endTime = endedAt?.getTime() ?? null;
+
+    if (startTime >= from.getTime() && startTime < to.getTime()) {
+      const startDay = days.get(dateKeyInTimeZone(session.assignedAt, timeZone));
+      if (startDay) startDay.assignmentsStarted += 1;
+    }
+
+    if (
+      endedAt &&
+      endTime !== null &&
+      endTime >= from.getTime() &&
+      endTime < to.getTime()
+    ) {
+      const endDay = days.get(dateKeyInTimeZone(endedAt, timeZone));
+      if (endDay) endDay.assignmentsCompleted += 1;
+    }
+
+    for (const date of dateKeys) {
+      const dayEnd = dayEnds.get(date);
+      const day = days.get(date);
+      if (
+        day &&
+        dayEnd !== undefined &&
+        startTime < dayEnd &&
+        (endTime === null || endTime >= dayEnd)
+      ) {
+        day.activeAssignments += 1;
+      }
+      void dayEnd;
+    }
+  }
+
+  return dateKeys.map((date) => ({
+    date,
+    ...(days.get(date) ?? {
+      assignmentsStarted: 0,
+      assignmentsCompleted: 0,
+      activeAssignments: 0,
+    }),
+  }));
 }
 
 export async function getMyRecentPerformance(agentId: string, limit: number) {

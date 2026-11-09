@@ -56,6 +56,14 @@ export function getTicketUnread(ticketId: string): number {
   return ticketUnreadCounts.get(ticketId) || 0;
 }
 
+export function getTotalTicketUnread(): number {
+  let total = 0;
+  ticketUnreadCounts.forEach((count) => {
+    total += count;
+  });
+  return total;
+}
+
 function updateTitle() {
   if (unreadCount > 0) {
     document.title = `(${unreadCount}) ${baseTitle}`;

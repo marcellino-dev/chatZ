@@ -336,6 +336,11 @@ function ChatListItem({
             {ticket.client.company}
           </p>
         )}
+        {ticket.status === 'WAITING' && ticket.requestedAnyAgent && (
+          <p className="truncate text-[11px] font-medium text-violet-600">
+            Escolheu qualquer atendente do setor
+          </p>
+        )}
         <div className="mt-0.5 flex items-center justify-between gap-2">
           <p
             className={`truncate text-[13px] ${

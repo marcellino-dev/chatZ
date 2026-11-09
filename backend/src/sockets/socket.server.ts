@@ -155,6 +155,10 @@ export function getIO(): Server {
   return io;
 }
 
+export function isUserConnected(userId: string): boolean {
+  return (io?.sockets.adapter.rooms.get(`user:${userId}`)?.size ?? 0) > 0;
+}
+
 export function emitToSector(
   sectorId: string,
   event: string,

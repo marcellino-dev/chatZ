@@ -186,6 +186,7 @@ model Ticket {
 
   requestedAgentId String?
   requestedAgent   User?   @relation("RequestedAgentTickets", fields: [requestedAgentId], references: [id])
+  requestedAnyAgent Boolean @default(false)
 
   agentId String?
   agent   User?   @relation("AgentTickets", fields: [agentId], references: [id])

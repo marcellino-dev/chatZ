@@ -267,6 +267,7 @@ async function handleAgentChoice(conversation: any, message: string): Promise<Bo
       sectorId: sector.id,
       clientId: client.id,
       requestedAgentId: chosenAgent?.id ?? null,
+      requestedAnyAgent: isQualquerUm,
       status: 'WAITING',
       priority: 'MEDIUM',
       channel: 'WHATSAPP',

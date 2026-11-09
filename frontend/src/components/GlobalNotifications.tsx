@@ -115,9 +115,6 @@ export function GlobalNotifications() {
     async function handleMessage(msg: MessageNewPayload) {
       console.log('🎯 [GlobalNotifications] message:new:', msg);
 
-      const s = useSettingsStore.getState();
-      if (!s.notificationsEnabled) return;
-      if (!s.messageNotifications) return;
       if (msg.senderId === userId) return;
 
       const currentPath = pathnameRef.current;
@@ -133,13 +130,16 @@ export function GlobalNotifications() {
 
       if (!shouldNotify) return;
 
+      incrementUnread();
+      incrementTicketUnread(msg.ticketId);
+
+      const s = useSettingsStore.getState();
+      if (!s.notificationsEnabled || !s.messageNotifications) return;
+
       if (s.soundEnabled) {
         if (s.soundType === 'ding') playDing();
         else if (s.soundType === 'notification') playNotification();
       }
-
-      incrementUnread();
-      incrementTicketUnread(msg.ticketId);
 
       const clientName = await fetchClientName(msg.ticketId);
       let preview = buildPreview(msg);

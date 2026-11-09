@@ -4,12 +4,14 @@ import { useAuthStore } from '../../stores/auth';
 import { ProfileAvatar } from '../ProfileAvatar';
 import { api } from '../../lib/api';
 import type { AgentStatus } from '../../types';
+import { getTotalTicketUnread, onUnreadChange } from '../../lib/notifications';
 
 interface NavItem {
   to: string;
   label: string;
   icon: React.ReactNode;
   badge?: number;
+  badgeLabel?: string;
 }
 
 const COLLAPSED_KEY = 'chatz-sidebar-collapsed';
@@ -37,9 +39,12 @@ export function IconBar() {
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState('');
   const [overdueFollowUps, setOverdueFollowUps] = useState(0);
+  const [unreadMessages, setUnreadMessages] = useState(getTotalTicketUnread);
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [menuOpen, setMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => onUnreadChange(() => setUnreadMessages(getTotalTicketUnread())), []);
 
   useEffect(() => {
     if (!user || (user.role !== 'ADMIN' && user.role !== 'AGENT')) return;
@@ -87,7 +92,13 @@ export function IconBar() {
   if (!user) return null;
 
   const items: NavItem[] = [
-    { to: '/chat', label: 'Conversas', icon: <ChatIcon /> },
+    {
+      to: '/chat',
+      label: 'Conversas',
+      icon: <ChatIcon />,
+      badge: unreadMessages,
+      badgeLabel: 'mensagens não lidas',
+    },
   ];
 
   if (user.role === 'ADMIN' || user.role === 'AGENT') {
@@ -96,6 +107,7 @@ export function IconBar() {
       label: 'Follow-ups',
       icon: <FollowUpIcon />,
       badge: overdueFollowUps,
+      badgeLabel: 'follow-ups vencidos',
     });
     items.push({
       to: '/history',
@@ -373,7 +385,7 @@ function SidebarLink({
               {item.icon}
               {item.badge ? (
                 <span
-                  aria-label={`${item.badge} follow-ups vencidos`}
+                  aria-label={`${item.badge} ${item.badgeLabel ?? 'itens pendentes'}`}
                   className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center
                              rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white"
                 >

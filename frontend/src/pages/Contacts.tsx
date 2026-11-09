@@ -44,6 +44,50 @@ function formatCount(value: number | null | undefined): string {
   return typeof value === 'number' ? value.toLocaleString('pt-BR') : '—';
 }
 
+function getMonthlyContactTrends(contacts: Contact[], currentMonth: Date) {
+  const months = Array.from({ length: 6 }, (_, index) =>
+    new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 5 + index, 1)
+  );
+  const createdAtTimes = contacts
+    .map((contact) => new Date(contact.createdAt).getTime())
+    .filter(Number.isFinite);
+  const monthlyRegistrations = months.map((month, index) => {
+    const nextMonth = months[index + 1] ?? new Date(month.getFullYear(), month.getMonth() + 1, 1);
+    return createdAtTimes.filter((createdAt) => createdAt >= month.getTime() && createdAt < nextMonth.getTime()).length;
+  });
+  const monthlyWithConversations = months.map((month, index) => {
+    const nextMonth = months[index + 1] ?? new Date(month.getFullYear(), month.getMonth() + 1, 1);
+    return contacts.filter((contact) => {
+      const createdAt = new Date(contact.createdAt).getTime();
+      return createdAt >= month.getTime()
+        && createdAt < nextMonth.getTime()
+        && (contact.conversationsCount ?? 0) > 0;
+    }).length;
+  });
+  const monthlyWithoutConversations = months.map((month, index) => {
+    const nextMonth = months[index + 1] ?? new Date(month.getFullYear(), month.getMonth() + 1, 1);
+    return contacts.filter((contact) => {
+      const createdAt = new Date(contact.createdAt).getTime();
+      return createdAt >= month.getTime()
+        && createdAt < nextMonth.getTime()
+        && (contact.conversationsCount ?? 0) === 0;
+    }).length;
+  });
+  let cumulativeRegistrations = contacts.filter(
+    (contact) => new Date(contact.createdAt).getTime() < months[0].getTime()
+  ).length;
+
+  return {
+    total: monthlyRegistrations.map((count) => {
+      cumulativeRegistrations += count;
+      return cumulativeRegistrations;
+    }),
+    newContacts: monthlyRegistrations,
+    withConversations: monthlyWithConversations,
+    withoutConversations: monthlyWithoutConversations,
+  };
+}
+
 const TAG_TONES = [
   'bg-violet-100 text-violet-700',
   'bg-sky-100 text-sky-700',
@@ -296,7 +340,7 @@ export function Contacts() {
     });
   }, [contacts, segment, tagFilter, periodCutoff]);
 
-  const hasConversationData = filteredContacts.some(
+  const hasConversationData = contacts.length === 0 || contacts.some(
     (contact) => typeof contact.conversationsCount === 'number'
   );
   const newThisMonth = filteredContacts.filter(
@@ -308,6 +352,10 @@ export function Contacts() {
   const withoutService = hasConversationData
     ? filteredContacts.filter((contact) => (contact.conversationsCount ?? 0) === 0).length
     : null;
+  const contactTrends = useMemo(
+    () => getMonthlyContactTrends(filteredContacts, new Date(monthStart)),
+    [filteredContacts, monthStart]
+  );
 
   const totalPages = Math.max(1, Math.ceil(filteredContacts.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -519,24 +567,28 @@ export function Contacts() {
                 tone="violet"
                 label="Total de contatos"
                 value={loading ? '—' : formatCount(filteredContacts.length)}
+                trend={loading ? null : contactTrends.total}
               />
               <MetricCard
                 icon={<Icon name="userPlus" className="h-7 w-7" />}
                 tone="green"
                 label="Novos este mês"
                 value={loading ? '—' : formatCount(newThisMonth)}
+                trend={loading ? null : contactTrends.newContacts}
               />
               <MetricCard
                 icon={<Icon name="chat" className="h-7 w-7" />}
                 tone="orange"
                 label="Com conversas"
                 value={loading ? '—' : formatCount(withConversations)}
+                trend={loading || withConversations === null ? null : contactTrends.withConversations}
               />
               <MetricCard
                 icon={<Icon name="userX" className="h-7 w-7" />}
                 tone="rose"
                 label="Sem atendimento"
                 value={loading ? '—' : formatCount(withoutService)}
+                trend={loading || withoutService === null ? null : contactTrends.withoutConversations}
               />
             </section>
 
@@ -1177,11 +1229,13 @@ function MetricCard({
   tone,
   label,
   value,
+  trend,
 }: {
   icon: ReactNode;
   tone: Tone;
   label: string;
   value: string;
+  trend: number[] | null;
 }) {
   return (
     <article className="relative flex min-h-[96px] items-center gap-4 overflow-hidden rounded-2xl bg-white px-5 py-4 shadow-sm ring-1 ring-slate-200/50">
@@ -1192,17 +1246,30 @@ function MetricCard({
         <p className="truncate text-sm font-medium text-slate-600">{label}</p>
         <p className="mt-0.5 text-3xl font-extrabold tracking-tight text-slate-900">{value}</p>
       </div>
-      <MiniWave tone={tone} />
+      {trend && <MiniWave tone={tone} label={label} values={trend} />}
     </article>
   );
 }
 
-function MiniWave({ tone }: { tone: Tone }) {
+function MiniWave({ tone, label, values }: { tone: Tone; label: string; values: number[] }) {
   const color = TONES[tone].stroke;
   const gradientId = `contacts-wave-${tone}`;
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const range = max - min || 1;
+  const points = values.map((value, index) => ({
+    x: (index / Math.max(values.length - 1, 1)) * 160,
+    y: 46 - ((value - min) / range) * 32,
+  }));
+  const linePath = points
+    .map(({ x, y }, index) => `${index === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`)
+    .join(' ');
+  const areaPath = `${linePath} L160 56 L0 56 Z`;
+
   return (
     <svg
-      aria-hidden="true"
+      role="img"
+      aria-label={`${label}: tendência nos últimos seis meses`}
       viewBox="0 0 160 56"
       preserveAspectRatio="none"
       className="pointer-events-none absolute bottom-0 right-0 hidden h-14 w-44 sm:block"
@@ -1213,17 +1280,8 @@ function MiniWave({ tone }: { tone: Tone }) {
           <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
-      <path
-        d="M0 46c14 0 14-12 28-12s12 8 26 8 16-20 30-20 14 10 28 10 18-24 32-24 10 8 16 8V56H0Z"
-        fill={`url(#${gradientId})`}
-      />
-      <path
-        d="M0 46c14 0 14-12 28-12s12 8 26 8 16-20 30-20 14 10 28 10 18-24 32-24 10 8 16 8"
-        fill="none"
-        stroke={color}
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
+      <path d={areaPath} fill={`url(#${gradientId})`} />
+      <path d={linePath} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
 }

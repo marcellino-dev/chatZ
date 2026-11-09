@@ -4,6 +4,7 @@ import type { AgentStatus } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { AppError } from '../../middlewares/errorHandler';
 import { signToken } from '../../utils/jwt';
+import { isUserConnected } from '../../sockets/socket.server';
 import {
   LoginInput,
   CreateUserInput,
@@ -352,7 +353,10 @@ export async function listUsers() {
     },
   });
 
-  return users;
+  return users.map((user) => ({
+    ...user,
+    status: user.active && isUserConnected(user.id) ? user.status : 'OFFLINE',
+  }));
 }
 
 // ==========================

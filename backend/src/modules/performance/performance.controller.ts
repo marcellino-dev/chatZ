@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   getMyDailyPerformance,
   getMyPerformance,
+  getMyPerformanceSummary,
   getMyRecentPerformance,
 } from './performance.service';
 
@@ -30,6 +31,12 @@ export async function mine(req: Request, res: Response) {
   const { from, to } = periodSchema.parse(req.query);
   const user = req.user!;
   const metrics = await getMyPerformance(user.id, from, to);
+  return res.json(metrics);
+}
+
+export async function summary(req: Request, res: Response) {
+  const user = req.user!;
+  const metrics = await getMyPerformanceSummary(user.id);
   return res.json(metrics);
 }
 

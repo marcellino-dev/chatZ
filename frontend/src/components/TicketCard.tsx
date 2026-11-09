@@ -53,6 +53,9 @@ export function TicketCard({ ticket, showActions, onAssign, onResolve }: Props) 
         {requestedName && !agentName && (
           <span className="text-chatz-primary">⭐ pediu: {requestedName}</span>
         )}
+        {ticket.status === 'WAITING' && ticket.requestedAnyAgent && (
+          <span className="text-chatz-primary">👥 qualquer atendente do setor</span>
+        )}
       </div>
 
       {showActions && (canAssign || canResolve) && (

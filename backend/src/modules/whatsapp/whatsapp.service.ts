@@ -194,6 +194,7 @@ export async function sendWhatsAppSticker({
     body: JSON.stringify({
       number: normalizePhone(phone),
       sticker: file.toString('base64'),
+      notConvertSticker: mimetype.split(';', 1)[0].trim().toLowerCase() === 'image/webp',
     }),
   });
 

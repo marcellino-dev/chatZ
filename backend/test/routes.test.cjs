@@ -146,6 +146,7 @@ const routes = [
   ['GET', '/follow-ups/mine', 401],
   ['GET', '/follow-ups/mine/overdue-count', 401],
   ['GET', '/performance/mine', 401],
+  ['GET', '/performance/mine/summary', 401],
   ['GET', '/performance/mine/daily', 401],
   ['GET', '/performance/mine/recent', 401],
   ['POST', '/follow-ups', 401],
@@ -179,7 +180,7 @@ test('all registered API routes respond with their expected access or validation
   }
 });
 
-test('agent performance tracks assignment periods, limits metrics to the signed-in agent, and captures WhatsApp ratings', async () => {
+test('agent performance tracks assignment periods and daily lifecycle events', async () => {
   const ticket = await prisma.ticket.create({
     data: {
       subject: 'Atendimento para métricas',
@@ -251,6 +252,22 @@ test('agent performance tracks assignment periods, limits metrics to the signed-
   assert.equal(metrics.ratingsReceived, 0);
   assert.deepEqual(metrics.ratingDistribution, { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 });
 
+  await prisma.agentTicketSession.createMany({
+    data: [
+      {
+        ticketId: ticket.id,
+        agentId: fixture.owner.id,
+        assignedAt: new Date(from.getTime() - 60_000),
+        endedAt: new Date(from.getTime() + 1_000),
+      },
+      {
+        ticketId: ticket.id,
+        agentId: fixture.owner.id,
+        assignedAt: new Date(from.getTime() - 30_000),
+      },
+    ],
+  });
+
   const dailyResponse = await fetch(
     `${baseUrl}/performance/mine/daily?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}&timeZone=UTC`,
     { headers: ownerHeaders },
@@ -259,8 +276,8 @@ test('agent performance tracks assignment periods, limits metrics to the signed-
   const dailyMetrics = await dailyResponse.json();
   assert.equal(dailyMetrics.length, 1);
   assert.equal(dailyMetrics[0].assignmentsStarted, 1);
-  assert.equal(dailyMetrics[0].assignmentsCompleted, 1);
-  assert.equal(dailyMetrics[0].activeAssignments, 0);
+  assert.equal(dailyMetrics[0].assignmentsCompleted, 2);
+  assert.equal(dailyMetrics[0].activeAssignments, 1);
 
   const recentResponse = await fetch(`${baseUrl}/performance/mine/recent?limit=5`, {
     headers: ownerHeaders,
@@ -445,7 +462,7 @@ test('agents can update only their own status and admins cannot use the agent st
   const listedUsers = await listedUsersResponse.json();
   assert.equal(
     listedUsers.find((user) => user.id === fixture.owner.id).status,
-    'AWAY',
+    'OFFLINE',
   );
 
   const busyStatusResponse = await fetch(`${baseUrl}/auth/me/status`, {
@@ -1651,6 +1668,75 @@ test('follow-ups are private to their creator and remain manageable after ticket
   assert.equal(history.length, 2);
   assert.ok(history.some((item) => item.completedAt));
   assert.ok(history.some((item) => item.cancelledAt));
+});
+
+test('agent performance summary counts assigned and resolved conversations', async () => {
+  const agent = await prisma.user.create({
+    data: {
+      name: 'Resumo de desempenho',
+      role: 'AGENT',
+      email: `summary-agent-${process.pid}@test.invalid`,
+      sectorId: fixture.sector.id,
+    },
+  });
+  const client = await prisma.user.create({
+    data: { name: 'Cliente do resumo', role: 'CLIENT' },
+  });
+  const [activeTicket, resolvedTicket, transferredTicket] = await Promise.all([
+    prisma.ticket.create({
+      data: {
+        subject: 'Conversa ativa',
+        status: 'IN_PROGRESS',
+        sectorId: fixture.sector.id,
+        clientId: client.id,
+        agentId: agent.id,
+      },
+    }),
+    prisma.ticket.create({
+      data: {
+        subject: 'Conversa resolvida',
+        status: 'RESOLVED',
+        sectorId: fixture.sector.id,
+        clientId: client.id,
+        agentId: agent.id,
+      },
+    }),
+    prisma.ticket.create({
+      data: {
+        subject: 'Conversa transferida',
+        status: 'IN_PROGRESS',
+        sectorId: fixture.sector.id,
+        clientId: client.id,
+      },
+    }),
+  ]);
+  await prisma.agentTicketSession.createMany({
+    data: [
+      {
+        ticketId: resolvedTicket.id,
+        agentId: agent.id,
+        assignedAt: new Date(Date.now() - 3_600_000),
+        endedAt: new Date(Date.now() - 1_800_000),
+      },
+      {
+        ticketId: transferredTicket.id,
+        agentId: agent.id,
+        assignedAt: new Date(Date.now() - 7_200_000),
+        endedAt: new Date(Date.now() - 3_600_000),
+      },
+    ],
+  });
+  const headers = {
+    authorization: 'Bearer ' + signToken({ sub: agent.id, role: 'AGENT' }),
+  };
+
+  const response = await fetch(`${baseUrl}/performance/mine/summary`, { headers });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    totalConversations: 3,
+    resolved: 1,
+    averageAssignmentDurationMs: 2_700_000,
+  });
 });
 
 test('malformed JSON is reported as a client error', async () => {
